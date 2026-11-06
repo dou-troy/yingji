@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>映集 · 影音聚合检索</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- 顶部栏 -->
+    <header class="topbar">
+      <div class="logo">
+        <span class="logo-mark"></span>
+        <span class="logo-text">映集</span>
+      </div>
+      <div class="topbar-tag">影音聚合检索</div>
+    </header>
+
+    <!-- 首页：搜索区 -->
+    <section class="hero" id="heroSection">
+      <div class="badge">已接入 影视 · 音乐 · B站视频</div>
+      <h1 class="headline">一个搜索框，找遍所有平台</h1>
+      <p class="subheadline">电影、剧集、音乐、B站视频……输入关键词，一次搜全。</p>
+
+      <div class="search-box">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none">
+          <circle cx="11" cy="11" r="7" stroke="#9A9AA5" stroke-width="2"/>
+          <path d="M16 16L20 20" stroke="#9A9AA5" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索电影 / 剧集 / 音乐 / B站视频…" autocomplete="off" />
+        <button id="searchBtn" class="btn-search">立即检索</button>
+      </div>
+
+      <div class="hot-row">
+        <span class="hot-label">大家都在搜：</span>
+        <button class="hot-tag" data-kw="流浪地球">流浪地球</button>
+        <button class="hot-tag" data-kw="周杰伦">周杰伦</button>
+        <button class="hot-tag" data-kw="三体">三体</button>
+        <button class="hot-tag" data-kw="庆余年">庆余年</button>
+      </div>
+    </section>
+
+    <!-- 检索结果区 -->
+    <section class="results" id="resultsSection" hidden>
+      <div class="results-head">
+        <div>
+          <h2 class="results-title" id="resultTitle">检索结果</h2>
+          <span class="source-badge" id="sourceBadge"></span>
+        </div>
+        <button class="btn-back" id="backBtn">← 返回搜索</button>
+      </div>
+
+      <!-- B站视频播放区 -->
+      <div class="bili-block" id="biliBlock" hidden>
+        <div class="block-title">
+          <span>B站视频</span>
+          <span class="block-hint" id="biliCount"></span>
+        </div>
+        <div class="bili-stage">
+          <!-- 左侧播放器 -->
+          <div class="bili-player">
+            <div class="video-wrap" id="videoWrap">
+              <div class="video-placeholder" id="videoPlaceholder">
+                <div class="placeholder-spinner"></div>
+                <p>视频加载中…</p>
+              </div>
+              <div class="video-empty" id="videoEmpty" hidden>
+                <p>点击右侧列表选择要播放的视频</p>
+              </div>
+            </div>
+            <div class="bili-info">
+              <div class="bili-title" id="biliTitle">—</div>
+              <div class="bili-meta" id="biliMeta"></div>
+            </div>
+          </div>
+          <!-- 右侧列表：自主选择 -->
+          <div class="bili-list" id="biliList"></div>
+        </div>
+      </div>
+
+      <!-- 影视 + 音乐结果 -->
+      <div class="list-block" id="videoBlock" hidden>
+        <div class="block-title">影视</div>
+        <div class="results-list" id="videoList"></div>
+      </div>
+      <div class="list-block" id="musicBlock" hidden>
+        <div class="block-title">音乐</div>
+        <div class="results-list" id="musicList"></div>
+      </div>
+
+      <div class="empty-tip" id="emptyTip" hidden>未找到相关结果，换个关键词试试</div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
