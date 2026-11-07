@@ -11,13 +11,17 @@
       }
       var ua = navigator.userAgent;
       var carUA = /CarPlay|Android Auto|Automotive|Tesla|DiLink|HarmonyOS.*Car|Vehicle|QNX|CarBrowser|BYD|NIO|XPeng|LiAuto/i.test(ua);
+      // 手机 / 平板 / 折叠屏一律不靠"宽屏"猜车机，避免横屏大屏手机被误判
+      var mobileLike = !carUA && /iPhone|iPod|iPad|Macintosh|Tablet|Windows Phone|Android.*Mobile|Mobile.*Android/i.test(ua);
       var touch = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
-      var wide = touch && window.innerWidth >= 900 && window.innerHeight <= 800 &&
+      var wide = touch && !mobileLike && window.innerWidth >= 1100 && window.innerHeight <= 800 &&
                  window.innerWidth > window.innerHeight * 1.6;
       var m = /(?:^|[?&])car=([01])(?:&|$)/.exec(location.search);
       var forced = m ? m[1] : null;
       var saved = localStorage.getItem("yingji_car");
       var on = forced === "1" || (forced !== "0" && (saved === "1" || (saved === null && (carUA || wide))));
+      // ?car=0 作为"恢复默认"，清掉预览 / 手动切换留下的车机记忆
+      if (forced === "0") { try { localStorage.removeItem("yingji_car"); } catch (e2) {} }
       if (on) document.documentElement.setAttribute("data-car", "on");
     } catch (e) {}
   </script>
@@ -33,7 +37,7 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
   <link rel="apple-touch-icon" href="icon.svg" />
-  <link rel="stylesheet" href="style.css?v=4" />
+  <link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
   <div class="app">
@@ -200,6 +204,6 @@
 
   <datalist id="searchHistory"></datalist>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>

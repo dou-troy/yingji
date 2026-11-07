@@ -586,7 +586,7 @@ kbd {
   .topbar-inner { height: 56px; padding: 0 16px; gap: 12px; }
   .brand-name { font-size: 17px; }
   .topbar-tag, .theme-label, .car-label { display: none; }
-  .theme-btn { width: 34px; padding: 0; justify-content: center; }
+  .theme-btn, .car-btn { width: 34px; min-width: 0; padding: 0; justify-content: center; }
   .top-nav a { padding: 6px 9px; font-size: 12px; }
   .hero { padding: 56px 18px 44px; min-height: calc(100vh - 116px); gap: 18px; }
   .subheadline { font-size: 14px; }

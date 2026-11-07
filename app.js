@@ -139,7 +139,13 @@
     setChildren(historyList, frag);
   }
   // 车机上软键盘输入很痛苦，把最近搜索做成可一键点选的大按钮
+  // 手机 / 桌面不生成这些节点，保持原有页面结构
   function renderRecent() {
+    if (!isCarOn()) {
+      setChildren(recentTags);
+      recentRow.hidden = true;
+      return;
+    }
     const list = getHistory().slice(0, 6);
     const frag = document.createDocumentFragment();
     list.forEach((kw) => {
@@ -162,7 +168,7 @@
   /* ---------- 车机模式 ---------- */
   const CAR_KEY = "yingji_car";
   function isCarOn() { return document.documentElement.getAttribute("data-car") === "on"; }
-  function applyCar(on, silent) {
+  function applyCar(on, silent, persist) {
     if (on) document.documentElement.setAttribute("data-car", "on");
     else document.documentElement.removeAttribute("data-car");
     carBtn.classList.toggle("is-on", on);
@@ -171,7 +177,11 @@
     carHeroNote.hidden = !on;
     driveNote.hidden = !on;
     renderRecent();
-    try { localStorage.setItem(CAR_KEY, on ? "1" : "0"); } catch (e) {}
+    // 只有用户手动点开关才记忆；首屏 / ?car= 强制模式不写，
+    // 避免预览过 ?car=1 的浏览器以后打开普通链接一直停在车机模式
+    if (persist !== false) {
+      try { localStorage.setItem(CAR_KEY, on ? "1" : "0"); } catch (e) {}
+    }
     if (silent) return;
     if (on) {
       if (!heroSection.hidden) clearPlayer(); // 停掉后台 iframe，改为驻车后手动点选
@@ -180,8 +190,8 @@
       showToast("已退出车机模式");
     }
   }
-  carBtn.addEventListener("click", () => applyCar(!isCarOn()));
-  applyCar(isCarOn(), true);
+  carBtn.addEventListener("click", () => applyCar(!isCarOn(), false, true));
+  applyCar(isCarOn(), true, false); // 初始化：不写 localStorage
 
   /* ---------- 图片（失败时显示首字兜底，不用 background-image） ---------- */
   function makePoster(item, cls) {
