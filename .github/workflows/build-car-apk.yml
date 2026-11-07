@@ -22,11 +22,23 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: 准备 Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: 安装 SDK 组件
-        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+      - name: 准备 Android SDK（使用构建机预装 SDK）
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "SDK=$SDK"
+          if [ -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          elif command -v sdkmanager >/dev/null 2>&1; then
+            SM="sdkmanager"
+          else
+            SM="$SDK/tools/bin/sdkmanager"
+          fi
+          echo "sdkmanager=$SM"
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" --install "platforms;android-34" "build-tools;34.0.0" "platform-tools" > /dev/null
+          echo "sdk.dir=$SDK" > "$GITHUB_WORKSPACE/car-android/local.properties"
+          ls "$SDK/platforms"
+          ls "$SDK/build-tools"
 
       - name: 安装 Gradle 8.2
         run: |
