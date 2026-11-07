@@ -169,6 +169,25 @@ app.get("/api/hot", async (req, res) => {
 });
 
 /**
+ * B站视频流解析（供小程序 <video> 内嵌播放）
+ * GET /api/bilibili/play?bvid=BV1xx411c7mD
+ * 返回：{ ok, data: { url, title, quality, poster } }
+ */
+app.get("/api/bilibili/play", async (req, res) => {
+  const bvid = (req.query.bvid || "").trim();
+  if (!bvid) {
+    return res.status(400).json({ code: 400, message: "缺少 bvid 参数" });
+  }
+  try {
+    const data = await bilibili.play(bvid);
+    res.json({ ok: true, data });
+  } catch (err) {
+    console.warn("[bilibili/play] 视频流解析失败：", err.message);
+    res.status(502).json({ code: 502, message: err.message || "视频流解析失败" });
+  }
+});
+
+/**
  * 榜单
  * GET /api/ranking?type=movie|music
  */

@@ -76,6 +76,59 @@ class BilibiliAdapter {
   }
 
   /**
+   * 解析可播放的视频流地址（供小程序 <video> 组件使用）
+   * 链路：bvid → view 接口拿 cid → playurl 接口拿 dash/durl 流地址。
+   * 仅解析 B站官方公开视频流，不涉及 VIP/付费/版权外内容。
+   */
+  async play(bvid) {
+    const headers = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+      Referer: "https://www.bilibili.com/",
+      Accept: "application/json",
+      Cookie: "buvid3=8B4F6A1C-2D3E-4F5A-9B8C-1D2E3F4A5B6C12345infoc; b_nut=1700000000",
+    };
+
+    // 1. 拿 cid
+    const viewUrl = `https://api.bilibili.com/x/web-interface/view?bvid=${bvid}`;
+    const viewResp = await fetch(viewUrl, { headers });
+    if (!viewResp.ok) throw new Error(`Bilibili view ${viewResp.status}`);
+    const viewData = await viewResp.json();
+    if (viewData.code !== 0) throw new Error(`获取视频信息失败：${viewData.message || viewData.code}`);
+    const cid = viewData.data && viewData.data.cid;
+    if (!cid) throw new Error("未获取到视频 cid");
+
+    // 2. 拿播放流地址（fnval=1 返回 durl mp4 流，音画合一，小程序 <video> 可直接播放）
+    const playUrl = `https://api.bilibili.com/x/player/playurl?bvid=${bvid}&cid=${cid}&qn=64&fnval=1`;
+    const playResp = await fetch(playUrl, { headers });
+    if (!playResp.ok) throw new Error(`Bilibili playurl ${playResp.status}`);
+    const playData = await playResp.json();
+    if (playData.code !== 0) throw new Error(`获取播放地址失败：${playData.message || playData.code}`);
+
+    const d = playData.data || {};
+    // durl 流（mp4 分片，含音轨），优先取
+    if (d.durl && d.durl.length) {
+      return {
+        url: d.durl[0].url,
+        title: viewData.data.title || "",
+        quality: d.quality || 0,
+        poster: this._cover(viewData.data.pic),
+      };
+    }
+    // 兜底：dash 流（音画分离，兼容性差，仅作最后手段）
+    if (d.dash && Array.isArray(d.dash.video) && d.dash.video.length) {
+      const video = d.dash.video[d.dash.video.length - 1];
+      return {
+        url: video.baseUrl || video.base_url,
+        title: viewData.data.title || "",
+        quality: video.id || 0,
+        poster: this._cover(viewData.data.pic),
+      };
+    }
+    throw new Error("未获取到可播放的视频流");
+  }
+
+  /**
    * 热门视频流（B站全站排行榜，默认播放内容）
    */
   async hot(limit = 20) {
