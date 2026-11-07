@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
+<meta name="format-detection" content="telephone=no">
+<title>映集 · 车机版</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- 左侧固定操作轨：搜索、分类、快捷词、设置 -->
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-mark">&#9654;</div>
+      <div>
+        <div class="brand-name">映集</div>
+        <div class="brand-sub">车机版 · 影音检索</div>
+      </div>
+    </div>
+
+    <div class="search-box">
+      <input id="q" type="text" placeholder="片名 / 歌手 / 关键词" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button id="goBtn" class="btn-primary" type="button">搜索</button>
+    </div>
+
+    <div class="side-label">内容分类</div>
+    <div id="tabs">
+      <button class="tab is-active" data-cat="video" type="button">
+        <span class="tab-name">影视</span><span class="tab-count" id="cntVideo">—</span>
+      </button>
+      <button class="tab" data-cat="music" type="button">
+        <span class="tab-name">音乐</span><span class="tab-count" id="cntMusic">—</span>
+      </button>
+      <button class="tab" data-cat="bilibili" type="button">
+        <span class="tab-name">B站视频</span><span class="tab-count" id="cntBili">—</span>
+      </button>
+    </div>
+
+    <div class="side-label">快捷搜索</div>
+    <div id="quick" class="quick-list"></div>
+
+    <div class="side-bottom">
+      <div class="side-row">
+        <button id="homeBtn" class="side-btn" type="button">回首页</button>
+        <button id="settingBtn" class="side-btn" type="button">服务设置</button>
+      </div>
+      <div id="netState" class="net-state"><i></i><span>正在连接服务…</span></div>
+    </div>
+  </aside>
+
+  <!-- 右侧主内容区 -->
+  <main id="main">
+    <header id="topbar">
+      <div id="pageTitle" class="page-title">找点想看的、想听的</div>
+      <div id="pageMeta" class="page-meta">输入关键词，或点左侧快捷搜索</div>
+    </header>
+
+    <div id="content">
+      <section id="welcome" class="welcome">
+        <h1>一个入口，搜遍影视 / 音乐 / B站</h1>
+        <p>1. 点左侧「快捷搜索」直接出结果，或在上方输入关键词</p>
+        <p>2. 用左侧分类切换影视、音乐、B站视频，三类结果平级展示</p>
+        <p>3. 点开任意结果，再选一个平台打开，或复制链接</p>
+        <div class="safety">行车安全提示：视频内容请驻车后观看，车机系统通常会在行驶中限制视频播放。</div>
+      </section>
+
+      <section id="loading" class="state-box" hidden>
+        <div class="spinner"></div>
+        <div>正在检索，车机网络较慢时请稍等…</div>
+      </section>
+
+      <section id="errorBox" class="state-box" hidden>
+        <div class="big">&#9888;</div>
+        <div id="errorMsg">网络连接失败</div>
+        <button id="retryBtn" type="button">重试</button>
+      </section>
+
+      <section id="emptyBox" class="state-box" hidden>
+        <div class="big">&#9675;</div>
+        <div id="emptyMsg">这一类暂无结果，试试左侧其他分类</div>
+      </section>
+
+      <div id="grid" class="grid" hidden></div>
+    </div>
+  </main>
+</div>
+
+<!-- 结果详情 / 平台选择大面板 -->
+<div id="sheet" class="sheet" hidden>
+  <div class="sheet-card">
+    <div class="sheet-head">
+      <div id="sheetPoster" class="sheet-poster"></div>
+      <div class="sheet-info">
+        <div id="sheetTitle" class="sheet-title"></div>
+        <div id="sheetMeta" class="sheet-meta"></div>
+        <div id="sheetNote" class="sheet-note"></div>
+      </div>
+    </div>
+    <div id="sheetActions" class="sheet-actions"></div>
+    <button id="sheetClose" class="sheet-close" type="button">取消</button>
+  </div>
+</div>
+
+<!-- 服务地址设置 -->
+<div id="settingSheet" class="sheet" hidden>
+  <div class="sheet-card">
+    <div class="sheet-title">服务设置</div>
+    <div class="sheet-meta">数据来自你原有的后端。更换服务器后在这里改地址，保存后重新搜索即可。</div>
+    <div class="setting-row"><span>当前服务</span><b id="apiNow"></b></div>
+    <input id="apiInput" class="setting-input" type="text" placeholder="https://你的服务地址" spellcheck="false">
+    <div class="sheet-actions">
+      <button id="apiSave" class="sheet-act is-main" type="button">保存</button>
+      <button id="apiReset" class="sheet-act" type="button">恢复默认</button>
+      <button id="apiCancel" class="sheet-act" type="button">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

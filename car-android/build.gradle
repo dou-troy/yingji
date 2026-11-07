@@ -1,0 +1,5 @@
+// 映集车机版 · 根构建脚本
+// AGP 8.1.4 需要 Gradle 8.0+ / JDK 17
+plugins {
+    id 'com.android.application' version '8.1.4' apply false
+}

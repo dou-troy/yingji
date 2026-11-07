@@ -1,0 +1,32 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'cn.yingji.car'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'cn.yingji.car'
+        minSdk 23          // 覆盖 Android 6.0 及以上的车机（DiLink 普遍为 8~10）
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+
+    buildTypes {
+        debug {
+            // 自用安装包：debug 签名即可直接安装到车机
+            debuggable true
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

@@ -1,0 +1,216 @@
+/* ============================================================
+   映集车机版 · 车机 HMI 样式
+   目标：1280x720 / 1920x720 / 1920x1080 超宽横屏
+   原则：深色高对比、大字号、≥56px 触控、少层级
+   兼容：不使用 CSS 变量 / grid / flex-gap / aspect-ratio / inset，
+        避免车机老 WebView 内核不支持
+   ========================================================== */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body {
+  margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden;
+  background: #0e1116; color: #f5f7fa;
+  font-family: "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+[hidden] { display: none !important; }
+button, input { font-family: inherit; outline: none; -webkit-appearance: none; }
+button { cursor: pointer; border: 0; background: none; color: inherit; }
+
+#app { display: flex; width: 100%; height: 100%; }
+
+/* ---------- 左侧操作轨 ---------- */
+#sidebar {
+  width: 300px; min-width: 300px; height: 100%;
+  background: #141a22; border-right: 1px solid #2b3542;
+  padding: 20px 18px; display: flex; flex-direction: column;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.brand { display: flex; align-items: center; margin-bottom: 18px; }
+.brand-mark {
+  width: 50px; height: 50px; border-radius: 13px; background: #ff6a3d;
+  color: #fff; font-size: 23px; line-height: 50px; text-align: center;
+  margin-right: 13px; flex: none;
+}
+.brand-name { font-size: 28px; font-weight: 700; line-height: 1.1; letter-spacing: 2px; }
+.brand-sub { font-size: 14px; color: #9aa9ba; margin-top: 5px; }
+
+.search-box { display: flex; flex-direction: column; }
+#q {
+  width: 100%; height: 62px; background: #0e1116;
+  border: 2px solid #33404f; border-radius: 12px;
+  color: #f5f7fa; font-size: 20px; padding: 0 15px; margin-bottom: 10px;
+  border-radius: 12px;
+}
+#q:focus { border-color: #ff6a3d; }
+#q::-webkit-input-placeholder { color: #6f7f90; }
+.btn-primary {
+  height: 62px; border-radius: 12px; background: #ff6a3d;
+  color: #fff; font-size: 21px; font-weight: 700;
+}
+.btn-primary:active { background: #e8582d; }
+
+.side-label { font-size: 14px; color: #8494a6; letter-spacing: 1px; margin: 18px 0 9px; }
+#tabs { display: flex; flex-direction: column; }
+.tab {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 64px; padding: 0 16px; margin-bottom: 8px;
+  border-radius: 11px; background: #1b222c;
+  border-left: 5px solid transparent; font-size: 21px; text-align: left;
+}
+.tab.is-active { background: #2b211e; border-left-color: #ff6a3d; color: #ffb59c; }
+.tab-count {
+  font-size: 17px; color: #c3d0de; background: #0e1116;
+  border-radius: 18px; padding: 3px 11px; min-width: 40px; text-align: center;
+}
+.quick-list {
+  display: flex; flex-wrap: wrap; align-content: flex-start;
+  max-height: 132px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+}
+.quick {
+  height: 50px; line-height: 50px; padding: 0 15px;
+  margin: 0 8px 8px 0; border-radius: 25px;
+  background: #202a36; color: #dbe4ee; font-size: 18px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.quick:active { background: #33404f; }
+.side-bottom { margin-top: auto; padding-top: 14px; border-top: 1px solid #2b3542; }
+.side-row { display: flex; }
+.side-btn {
+  flex: 1; height: 52px; margin-right: 8px; border-radius: 10px;
+  background: #202a36; color: #c8d3df; font-size: 17px; text-align: center;
+}
+.side-btn:last-child { margin-right: 0; }
+.net-state { display: flex; align-items: center; font-size: 14px; color: #9aa9ba; height: 30px; }
+.net-state i { width: 11px; height: 11px; border-radius: 50%; background: #f0a63c; margin-right: 9px; display: inline-block; flex: none; }
+.net-state.is-on i { background: #3ecf8e; }
+.net-state.is-off i { background: #f0544c; }
+
+/* ---------- 右侧主区 ---------- */
+#main { flex: 1; height: 100%; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+#topbar {
+  height: 96px; min-height: 96px; padding: 16px 30px;
+  border-bottom: 1px solid #222c38;
+  display: flex; flex-direction: column; justify-content: center;
+}
+.page-title { font-size: 28px; font-weight: 700; line-height: 1.25; }
+.page-meta { font-size: 16px; color: #9aa9ba; margin-top: 5px; }
+#content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 22px 30px 40px; }
+
+.welcome { padding: 24px 0; }
+.welcome h1 { font-size: 40px; margin: 0 0 22px; line-height: 1.35; font-weight: 700; }
+.welcome p { font-size: 20px; color: #aebbc9; line-height: 1.9; margin: 0 0 8px; }
+.welcome .safety {
+  margin-top: 30px; padding: 18px 22px; background: #241c18;
+  border-left: 5px solid #ff6a3d; border-radius: 10px;
+  font-size: 18px; color: #ffc4ad; line-height: 1.6;
+}
+
+/* 结果网格：float 布局，对老 WebView 最稳 */
+.grid { width: 100%; overflow: hidden; }
+.grid:after { content: ""; display: block; clear: both; }
+.card { float: left; width: 20%; padding: 0 9px 20px; }
+.card-inner {
+  background: #1b222c; border: 1px solid #2b3542; border-radius: 13px;
+  overflow: hidden; height: 100%;
+}
+.card:active .card-inner { border-color: #ff6a3d; }
+.poster {
+  height: 200px; background: #232d3a; position: relative; overflow: hidden;
+  color: #5f7186; font-size: 62px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.poster img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+.poster img.is-broken { display: none; }
+.card-body { padding: 12px 13px 15px; }
+.card-title { font-size: 19px; font-weight: 600; line-height: 1.4; height: 54px; overflow: hidden; word-break: break-all; }
+.card-sub { font-size: 15px; color: #9aa9ba; margin-top: 7px; height: 21px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.card-tag { display: inline-block; margin-top: 9px; padding: 3px 9px; border-radius: 6px; background: #2a3542; color: #b9c7d6; font-size: 13px; }
+
+.state-box { padding: 54px 0; text-align: center; font-size: 21px; color: #aebbc9; }
+.state-box .big { font-size: 58px; margin-bottom: 14px; color: #5f7186; }
+.state-box button {
+  margin-top: 22px; padding: 0 38px; height: 62px; border-radius: 12px;
+  background: #ff6a3d; color: #fff; font-size: 20px; font-weight: 700;
+}
+.spinner {
+  width: 52px; height: 52px; border: 5px solid #2b3542; border-top-color: #ff6a3d;
+  border-radius: 50%; margin: 0 auto 22px;
+  -webkit-animation: yjspin 1s linear infinite; animation: yjspin 1s linear infinite;
+}
+@-webkit-keyframes yjspin { to { -webkit-transform: rotate(360deg); } }
+@keyframes yjspin { to { transform: rotate(360deg); } }
+
+/* ---------- 大按钮面板 ---------- */
+.sheet {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 50;
+  background: rgba(5, 8, 12, .86);
+  display: flex; align-items: center; justify-content: center; padding: 28px;
+}
+.sheet-card {
+  width: 780px; max-width: 100%; max-height: 100%; overflow-y: auto;
+  background: #1b222c; border: 1px solid #3a4655; border-radius: 18px; padding: 26px;
+}
+.sheet-head { display: flex; margin-bottom: 20px; }
+.sheet-poster {
+  width: 140px; height: 186px; border-radius: 11px; background: #232d3a;
+  flex: none; overflow: hidden; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 56px; font-weight: 700; color: #5f7186;
+}
+.sheet-poster img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+.sheet-poster img.is-broken { display: none; }
+.sheet-info { padding-left: 22px; flex: 1; min-width: 0; }
+.sheet-title { font-size: 28px; font-weight: 700; line-height: 1.4; }
+.sheet-meta { font-size: 18px; color: #9aa9ba; margin-top: 10px; line-height: 1.6; }
+.sheet-note { font-size: 16px; color: #ffc4ad; margin-top: 14px; line-height: 1.6; }
+.sheet-actions { display: flex; flex-wrap: wrap; }
+.sheet-act {
+  height: 68px; min-width: 200px; flex: 1;
+  margin: 0 10px 10px 0; padding: 0 18px; border-radius: 11px;
+  background: #2a3542; color: #f5f7fa; font-size: 19px; text-align: center;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.sheet-act:active { background: #3a4655; }
+.sheet-act.is-main { background: #ff6a3d; color: #fff; font-weight: 700; }
+.sheet-close {
+  width: 100%; height: 66px; margin-top: 12px; border-radius: 11px;
+  background: #141a22; color: #c8d3df; font-size: 20px;
+}
+.setting-row { display: flex; align-items: center; margin-top: 20px; font-size: 17px; color: #9aa9ba; }
+.setting-row b { color: #dbe4ee; font-weight: 500; margin-left: 12px; word-break: break-all; }
+.setting-input {
+  width: 100%; height: 62px; background: #0e1116;
+  border: 2px solid #33404f; border-radius: 11px;
+  color: #f5f7fa; font-size: 18px; padding: 0 15px; margin: 12px 0 18px;
+}
+.setting-input:focus { border-color: #ff6a3d; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 42px; z-index: 80;
+  -webkit-transform: translateX(-50%); transform: translateX(-50%);
+  padding: 14px 28px; border-radius: 30px; background: #2a3542;
+  color: #fff; font-size: 18px; opacity: 0; pointer-events: none;
+  transition: opacity .2s;
+}
+.toast.is-on { opacity: 1; }
+
+/* ---------- 不同车机分辨率 ---------- */
+@media (max-width: 1500px) {
+  .card { width: 25%; }
+  .poster { height: 180px; }
+}
+@media (max-width: 1150px) {
+  #sidebar { width: 256px; min-width: 256px; padding: 16px 14px; }
+  .card { width: 33.333%; }
+  .poster { height: 160px; }
+  .welcome h1 { font-size: 32px; }
+  .page-title { font-size: 24px; }
+}
+@media (max-height: 800px) {
+  .poster { height: 158px; }
+  .welcome { padding: 8px 0; }
+  .welcome h1 { font-size: 32px; margin-bottom: 14px; }
+  .welcome p { font-size: 18px; }
+  .welcome .safety { margin-top: 18px; padding: 14px 18px; font-size: 16px; }
+  #topbar { height: 84px; min-height: 84px; }
+  .state-box { padding: 34px 0; }
+}
