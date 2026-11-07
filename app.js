@@ -1,34 +1,28 @@
 // 映集 · 影音聚合检索
 // 首页搜索框 → 搜索后结果区展示：B站视频播放 + 影视 + 音乐
 
-// ===== 后端 API 地址解析（三层回退，解决"其他设备打不开"）=====
-// 1. 如果当前页面同源就带着后端（同域名部署），直接用同源
-// 2. 否则读 localStorage 里手动配置的公网后端地址
-// 3. 都没有则回退到 localhost:3000（仅本机开发用）
+// ===== 后端 API 地址解析 =====
+// 后端通过 express.static 直接托管前端，前后端永远同源，
+// 因此 API 直接用相对路径 /api/... 即可，任何设备打开都正确。
+// 仅当「前端单独托管、后端在别处」时才需要手动指定地址。
 const REMOTE_API_KEY = "yingji_api_base";
 
 function resolveApiBase() {
-  // 同源优先：如果页面本身就由后端托管，/api 直接可用
-  const isSameOriginServing = document.location.origin.includes("localhost") ||
-    document.location.origin.includes("127.0.0.1");
-  if (isSameOriginServing) return document.location.origin;
-
-  // 手动配置的公网后端地址（部署后填写）
+  // 优先：读取手动配置的后端地址（仅在前后端分离部署时使用）
   try {
     const saved = localStorage.getItem(REMOTE_API_KEY);
     if (saved && /^https?:\/\//.test(saved)) return saved.replace(/\/+$/, "");
   } catch (e) {
     /* localStorage 不可用时忽略 */
   }
-
-  // 兜底：本机开发
-  return "http://localhost:3000";
+  // 默认：同源（空字符串表示相对路径，前端后端同域名）
+  return "";
 }
 
 let API_BASE = resolveApiBase();
 const SEARCH_API = () => `${API_BASE}/api/search`;
 
-// 暴露一个全局方法，方便部署后把公网地址写进页面/控制台
+// 暴露一个全局方法，方便前后端分离部署时把后端地址写进页面/控制台
 window.__setYingjiApi = (url) => {
   try {
     localStorage.setItem(REMOTE_API_KEY, url.replace(/\/+$/, ""));
