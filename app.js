@@ -42,6 +42,9 @@
   const musicBlock = $("musicBlock"), musicCount = $("musicCount"), musicList = $("musicList");
   const themeBtn = $("themeBtn"), themeIcon = $("themeIcon"), themeLabel = $("themeLabel");
   const toastEl = $("toast"), historyList = $("searchHistory");
+  const carBtn = $("carBtn"), carLabel = $("carLabel");
+  const recentRow = $("recentRow"), recentTags = $("recentTags");
+  const carHeroNote = $("carHeroNote"), driveNote = $("driveNote");
 
   /* ---------- 主题：跟随系统 / 浅色 / 深色 ---------- */
   const THEME_KEY = "yingji_theme";
@@ -86,6 +89,11 @@
     const s = u.trim();
     return /^https?:\/\//i.test(s) ? s : ""; // 过滤 javascript: / data: 等
   }
+  // replaceChildren 在部分老车机 WebView 上不存在，统一走兼容写法
+  function setChildren(node, frag) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+    if (frag) node.appendChild(frag);
+  }
   function el(tag, cls, text) {
     const node = document.createElement(tag);
     if (cls) node.className = cls;
@@ -113,7 +121,7 @@
     })[source] || "数据源：真实 + 演示";
   }
 
-  /* ---------- 搜索历史（datalist） ---------- */
+  /* ---------- 搜索历史（datalist + 车机可点按钮） ---------- */
   const HISTORY_KEY = "yingji_history";
   function getHistory() {
     try {
@@ -128,14 +136,52 @@
       opt.value = kw;
       frag.appendChild(opt);
     });
-    historyList.replaceChildren(frag);
+    setChildren(historyList, frag);
+  }
+  // 车机上软键盘输入很痛苦，把最近搜索做成可一键点选的大按钮
+  function renderRecent() {
+    const list = getHistory().slice(0, 6);
+    const frag = document.createDocumentFragment();
+    list.forEach((kw) => {
+      const b = el("button", "recent-tag", kw);
+      b.type = "button";
+      b.addEventListener("click", () => doSearch(kw));
+      frag.appendChild(b);
+    });
+    setChildren(recentTags, frag);
+    recentRow.hidden = !isCarOn() || !list.length;
   }
   function pushHistory(kw) {
-    const list = [kw, ...getHistory().filter((x) => x !== kw)].slice(0, 8);
+    const list = [kw].concat(getHistory().filter((x) => x !== kw)).slice(0, 8);
     try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch (e) {}
     renderHistory(list);
+    renderRecent();
   }
   renderHistory(getHistory());
+
+  /* ---------- 车机模式 ---------- */
+  const CAR_KEY = "yingji_car";
+  function isCarOn() { return document.documentElement.getAttribute("data-car") === "on"; }
+  function applyCar(on, silent) {
+    if (on) document.documentElement.setAttribute("data-car", "on");
+    else document.documentElement.removeAttribute("data-car");
+    carBtn.classList.toggle("is-on", on);
+    carLabel.textContent = on ? "车机开" : "车机";
+    carBtn.title = on ? "车机模式已开启（点击关闭）" : "切换车机模式（大按钮 / 音乐优先 / 驻车播放）";
+    carHeroNote.hidden = !on;
+    driveNote.hidden = !on;
+    renderRecent();
+    try { localStorage.setItem(CAR_KEY, on ? "1" : "0"); } catch (e) {}
+    if (silent) return;
+    if (on) {
+      if (!heroSection.hidden) clearPlayer(); // 停掉后台 iframe，改为驻车后手动点选
+      showToast("车机模式：音乐优先，视频请驻车后点选");
+    } else {
+      showToast("已退出车机模式");
+    }
+  }
+  carBtn.addEventListener("click", () => applyCar(!isCarOn()));
+  applyCar(isCarOn(), true);
 
   /* ---------- 图片（失败时显示首字兜底，不用 background-image） ---------- */
   function makePoster(item, cls) {
@@ -147,7 +193,7 @@
     img.loading = "lazy";
     img.decoding = "async";
     // 绝对定位覆盖文字：加载失败隐藏图片即露出兜底文字
-    img.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;";
+    img.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;";
     img.addEventListener("error", () => { img.classList.add("is-broken"); box.classList.add("is-fallback"); });
     img.src = url;
     box.appendChild(img);
@@ -157,20 +203,22 @@
   /* ---------- B站播放器 ---------- */
   let biliPlaylist = [], biliIndex = -1;
 
+  const CAR_PLAY_HINT = "请在驻车后点选右侧视频开始播放";
   function clearPlayer() {
     const old = videoWrap.querySelector("iframe");
     if (old) old.remove(); // 返回首页时移除，避免后台继续播放
     videoPlaceholder.hidden = false;
     const p = videoPlaceholder.querySelector("p");
-    if (p) p.textContent = "点击右侧列表，选择要播放的视频";
+    if (p) p.textContent = isCarOn() ? CAR_PLAY_HINT : "点击右侧列表，选择要播放的视频";
     biliTitle.textContent = "—";
     biliMeta.textContent = "从右侧列表挑一条开始看";
     biliOpen.hidden = true;
   }
 
-  function playBili(index) {
+  // 只选中、不创建 iframe：车机搜索后的默认态（行驶中不加载视频流）
+  function selectBili(index) {
     const v = biliPlaylist[index];
-    if (!v || !safeUrl(v.embed)) return;
+    if (!v) return;
     biliIndex = index;
 
     const old = videoWrap.querySelector("iframe");
@@ -178,23 +226,7 @@
 
     videoPlaceholder.hidden = false;
     const p = videoPlaceholder.querySelector("p");
-    if (p) p.textContent = "播放器加载中…";
-
-    const iframe = document.createElement("iframe");
-    iframe.title = `${v.name || "B站视频"} · 哔哩哔哩播放器`;
-    iframe.setAttribute("allowfullscreen", "true");
-    iframe.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
-    iframe.setAttribute("scrolling", "no");
-    iframe.addEventListener("load", () => { videoPlaceholder.hidden = true; });
-    iframe.src = v.embed;
-    videoWrap.appendChild(iframe);
-    // B站 iframe 偶发被网络拦截时不触发 load，给出可操作的提示而不是一直转圈
-    setTimeout(() => {
-      if (!videoPlaceholder.hidden && biliIndex === index) {
-        const pp = videoPlaceholder.querySelector("p");
-        if (pp) pp.textContent = "播放器加载较慢，可点下方「在 B站打开」";
-      }
-    }, 8000);
+    if (p) p.textContent = isCarOn() ? CAR_PLAY_HINT : "点击右侧列表，选择要播放的视频";
 
     biliTitle.textContent = v.name || "—";
     const parts = [];
@@ -213,12 +245,37 @@
     });
   }
 
+  function playBili(index) {
+    const v = biliPlaylist[index];
+    if (!v || !safeUrl(v.embed)) return;
+    selectBili(index);
+
+    const p = videoPlaceholder.querySelector("p");
+    if (p) p.textContent = "播放器加载中…";
+
+    const iframe = document.createElement("iframe");
+    iframe.title = `${v.name || "B站视频"} · 哔哩哔哩播放器`;
+    iframe.setAttribute("allowfullscreen", "true");
+    iframe.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
+    iframe.setAttribute("scrolling", "no");
+    iframe.addEventListener("load", () => { videoPlaceholder.hidden = true; });
+    iframe.src = v.embed;
+    videoWrap.appendChild(iframe);
+    // B站 iframe 偶发被网络拦截时不触发 load，给出可操作的提示而不是一直转圈
+    setTimeout(() => {
+      if (!videoPlaceholder.hidden && biliIndex === index) {
+        const pp = videoPlaceholder.querySelector("p");
+        if (pp) pp.textContent = "播放器加载较慢，可点下方「在 B站打开」";
+      }
+    }, 8000);
+  }
+
   function renderBili() {
     const frag = document.createDocumentFragment();
     biliCount.textContent = `共 ${biliPlaylist.length} 条 · 点击列表切换播放`;
 
     if (!biliPlaylist.length) {
-      biliList.replaceChildren();
+      setChildren(biliList);
       clearPlayer();
       return;
     }
@@ -247,8 +304,9 @@
       });
       frag.appendChild(item);
     });
-    biliList.replaceChildren(frag);
-    playBili(0); // 默认展示第一条（播放器 autoplay=0，不会自动出声）
+    setChildren(biliList, frag);
+    if (isCarOn()) selectBili(0); // 车机：只选中，行驶中不加载视频流
+    else playBili(0);             // 其他设备：默认展示第一条（autoplay=0，不会自动出声）
   }
 
   /* ---------- 结果卡片（全部 DOM API 构建，避免第三方字段注入） ---------- */
@@ -297,7 +355,7 @@
   function renderList(container, list) {
     const frag = document.createDocumentFragment();
     list.forEach((item) => frag.appendChild(buildCard(item)));
-    container.replaceChildren(frag);
+    setChildren(container, frag);
   }
 
   /* ---------- 检索状态 ---------- */
@@ -305,6 +363,12 @@
   const FRONT_TTL = 5 * 60 * 1000;
   const frontCache = new Map();
   let activeController = null, lastKeyword = "";
+
+  function requestTimeout() { return isCarOn() ? 40000 : REQUEST_TIMEOUT; } // 车载网络更慢
+  function makeController() {
+    if (typeof AbortController === "function") return new AbortController();
+    return { signal: undefined, abort: function () {} }; // 老车机内核兜底
+  }
 
   function activeInput() { return heroSection.hidden ? resultInput : searchInput; }
 
@@ -331,7 +395,7 @@
     skeleton.hidden = true;
     errorState.hidden = true;
     setButtonsDisabled(false);
-    window.scrollTo({ top: 0, behavior: "auto" });
+    window.scrollTo(0, 0);
     setTimeout(() => searchInput.focus(), 0);
   }
   function setButtonsDisabled(disabled) {
@@ -368,7 +432,7 @@
     const source = el("span", "summary-source", sourceBadgeText(data.source));
     frag.appendChild(source);
     chips.forEach((t) => frag.appendChild(el("span", "", t)));
-    resultsSummary.replaceChildren(frag);
+    setChildren(resultsSummary, frag);
     resultsSummary.hidden = false;
   }
   function updateNav(bili, video, music) {
@@ -388,7 +452,7 @@
     errorState.hidden = true;
     resultContent.hidden = false;
     resultTitle.textContent = `“${data.query || ""}” 的检索结果`;
-    renderSummary({ ...data, video, music, bilibili }, fromCache);
+    renderSummary(Object.assign({}, data, { video: video, music: music, bilibili: bilibili }), fromCache);
 
     if (bilibili.length) {
       biliBlock.hidden = false;
@@ -398,7 +462,7 @@
       biliBlock.hidden = true;
       biliPlaylist = [];
       biliIndex = -1;
-      biliList.replaceChildren();
+      setChildren(biliList);
       clearPlayer();
     }
 
@@ -427,7 +491,7 @@
     resultInput.value = kw;
     syncClearBtns();
     showResultsView();
-    window.scrollTo({ top: 0, behavior: "auto" });
+    window.scrollTo(0, 0);
     pushHistory(kw);
     setQueryParam(kw); // 地址栏带上关键词，可直接复制分享结果页
 
@@ -441,16 +505,26 @@
 
     setLoading(kw);
     if (activeController) activeController.abort();
-    const controller = new AbortController();
+    const controller = makeController();
     activeController = controller;
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT);
+    const timer = setTimeout(() => {
+      if (activeController !== controller) return;
+      timedOut = true;
+      controller.abort();
+      // 老内核没有 AbortController 时 abort() 是空操作，主动收尾避免卡在骨架屏
+      if (typeof AbortController !== "function") {
+        activeController = null;
+        setButtonsDisabled(false);
+        showError("请求超时了，可能是服务正在唤醒。点「重新检索」再试一次。");
+      }
+    }, requestTimeout());
 
     try {
       const resp = await fetch(`${SEARCH_API()}?q=${encodeURIComponent(kw)}`, { signal: controller.signal });
       if (!resp.ok) throw new Error(`服务返回 ${resp.status}`);
       const data = await resp.json();
-      if (activeController !== controller) return; // 已被更新的搜索取代
+      if (activeController !== controller || timedOut) return; // 已被更新的搜索取代 / 已超时
       frontCache.set(kw, { t: Date.now(), data });
       renderResults(data, data.cached === true);
     } catch (err) {

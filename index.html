@@ -3,12 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <script>
-    // 首屏前应用主题，避免深色用户看到浅色闪一下
+    // 首屏前应用主题 + 车机模式，避免闪一下
     try {
       var t = localStorage.getItem("yingji_theme");
       if (t === "light" || t === "dark" || t === "auto") {
         document.documentElement.setAttribute("data-theme", t);
       }
+      var ua = navigator.userAgent;
+      var carUA = /CarPlay|Android Auto|Automotive|Tesla|DiLink|HarmonyOS.*Car|Vehicle|QNX|CarBrowser|BYD|NIO|XPeng|LiAuto/i.test(ua);
+      var touch = ("ontouchstart" in window) || (navigator.maxTouchPoints > 0);
+      var wide = touch && window.innerWidth >= 900 && window.innerHeight <= 800 &&
+                 window.innerWidth > window.innerHeight * 1.6;
+      var m = /(?:^|[?&])car=([01])(?:&|$)/.exec(location.search);
+      var forced = m ? m[1] : null;
+      var saved = localStorage.getItem("yingji_car");
+      var on = forced === "1" || (forced !== "0" && (saved === "1" || (saved === null && (carUA || wide))));
+      if (on) document.documentElement.setAttribute("data-car", "on");
     } catch (e) {}
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -16,8 +26,14 @@
   <meta name="description" content="一个搜索框，找遍影视、音乐与 B站视频。聚合豆瓣、QQ音乐、网易云、哔哩哔哩的公开检索结果。" />
   <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
   <meta name="theme-color" content="#0a0a0f" media="(prefers-color-scheme: dark)" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23ff6a3d'/%3E%3Cpath d='M26 19l23 13-23 13z' fill='white'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="映集" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <div class="app">
@@ -37,6 +53,10 @@
 
         <div class="topbar-right">
           <span class="topbar-tag">影音聚合检索</span>
+          <button class="car-btn" id="carBtn" type="button" aria-label="切换车机模式" title="切换车机模式（大按钮 / 音乐优先 / 驻车播放）">
+            <span class="car-icon" aria-hidden="true">▣</span>
+            <span class="car-label" id="carLabel">车机</span>
+          </button>
           <button class="theme-btn" id="themeBtn" type="button" aria-label="切换显示主题" title="当前：跟随系统（点击切换）">
             <span class="theme-icon" id="themeIcon" aria-hidden="true">◐</span>
             <span class="theme-label" id="themeLabel">跟随</span>
@@ -70,7 +90,13 @@
         <button type="button" class="hot-tag" data-kw="庆余年">庆余年</button>
       </div>
 
+      <div class="recent-row" id="recentRow" hidden>
+        <span class="hot-label">最近搜索</span>
+        <div class="recent-tags" id="recentTags"></div>
+      </div>
+
       <p class="hero-foot">数据来源：豆瓣 · QQ音乐 · 网易云音乐 · 哔哩哔哩　｜　按 <kbd>/</kbd> 快速聚焦搜索</p>
+      <p class="car-hero-note" id="carHeroNote" hidden>车机模式 · 大按钮 / 音乐优先 / 驻车后再播放视频</p>
     </section>
 
     <!-- ===== 检索结果区 ===== -->
@@ -129,6 +155,10 @@
             <h3>B站视频</h3>
             <span class="block-hint" id="biliCount"></span>
           </div>
+          <div class="drive-note" id="driveNote" hidden>
+            <span class="drive-note-icon" aria-hidden="true">⚠</span>
+            <span>行驶中请勿观看视频。车机模式下不会自动播放，请在驻车后点选列表。</span>
+          </div>
           <div class="bili-stage">
             <div class="bili-player">
               <div class="video-wrap" id="videoWrap">
@@ -170,6 +200,6 @@
 
   <datalist id="searchHistory"></datalist>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

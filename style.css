@@ -175,6 +175,21 @@ a { color: inherit; }
 .theme-btn:hover { border-color: var(--accent-border); color: var(--accent-text); }
 .theme-icon { font-size: 16px; line-height: 1; color: var(--accent); }
 
+/* 车机模式开关 */
+.car-btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 34px; padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-panel);
+  color: var(--text-3);
+  font-size: 12px;
+  transition: all .18s;
+}
+.car-btn:hover { border-color: var(--accent-border); color: var(--accent-text); }
+.car-btn.is-on { border-color: var(--accent-border); color: var(--accent-text); background: var(--accent-bg); }
+.car-icon { font-size: 15px; line-height: 1; }
+
 /* ===== 首页 ===== */
 .hero {
   flex: 1;
@@ -202,6 +217,7 @@ a { color: inherit; }
   box-shadow: 0 0 0 4px var(--accent-glow);
 }
 .headline {
+  font-size: 48px; /* 老内核兜底：不支持 clamp() 时用固定值 */
   font-size: clamp(32px, 5vw, 54px);
   font-weight: 750;
   letter-spacing: -1px;
@@ -272,7 +288,7 @@ a { color: inherit; }
 .btn-search:disabled { opacity: .6; cursor: default; transform: none; }
 .search-box--lg .btn-search { padding: 12px 28px; font-size: 15px; }
 .search-box--sm .btn-search { padding: 9px 20px; font-size: 14px; }
-.btn-search:focus-visible, .btn-back:focus-visible, .hot-tag:focus-visible, .theme-btn:focus-visible {
+.btn-search:focus-visible, .btn-back:focus-visible, .hot-tag:focus-visible, .theme-btn:focus-visible, .car-btn:focus-visible, .recent-tag:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 
@@ -362,7 +378,7 @@ kbd {
   border-radius: 14px;
 }
 @keyframes shimmer { to { background-position: -200% 0; } }
-.sk-player { aspect-ratio: 16 / 9; border-radius: 16px; }
+.sk-player { height: 0; padding-top: 56.25%; border-radius: 16px; } /* 不用 aspect-ratio，兼容老车机内核 */
 .sk-item { height: 76px; flex: 1; }
 .sk-card { height: 104px; margin-bottom: 14px; }
 
@@ -412,12 +428,13 @@ kbd {
 .video-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 16 / 9;
+  height: 0;
+  padding-top: 56.25%; /* 16:9，不用 aspect-ratio，兼容老车机内核 */
   background: #000;
 }
-.video-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
+.video-wrap iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
 .video-placeholder {
-  position: absolute; inset: 0;
+  position: absolute; top: 0; left: 0; width: 100%; height: 100%;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 14px;
   color: #b9bac6; font-size: 13px;
@@ -568,7 +585,7 @@ kbd {
   html { scroll-padding-top: 120px; }
   .topbar-inner { height: 56px; padding: 0 16px; gap: 12px; }
   .brand-name { font-size: 17px; }
-  .topbar-tag, .theme-label { display: none; }
+  .topbar-tag, .theme-label, .car-label { display: none; }
   .theme-btn { width: 34px; padding: 0; justify-content: center; }
   .top-nav a { padding: 6px 9px; font-size: 12px; }
   .hero { padding: 56px 18px 44px; min-height: calc(100vh - 116px); gap: 18px; }
@@ -592,6 +609,131 @@ kbd {
   .platform-link { font-size: 11px; padding: 5px 10px; }
   .footer { padding: 18px 16px; font-size: 11px; }
 }
+
+/* ===== 车机新增组件（默认态，由 JS 控制 hidden） ===== */
+.recent-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.recent-tags { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.recent-tag {
+  background: var(--bg-panel); color: var(--text-2);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 16px; font-size: 13px; transition: all .18s;
+}
+.recent-tag:hover { border-color: var(--accent-border); color: var(--accent-text); background: var(--accent-bg); }
+.car-hero-note { font-size: 13px; color: var(--accent-text); }
+.drive-note {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px; padding: 12px 18px;
+  border-radius: 12px;
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-text); font-size: 13px;
+}
+.drive-note-icon { font-size: 16px; flex-shrink: 0; }
+
+/* 老车机内核不支持 flex/grid gap 时的基础间距兜底 */
+@supports not (gap: 1px) {
+  .topbar-inner > * + *, .topbar-right > * + *, .top-nav > * + *,
+  .search-box > * + *, .hot-row > * + *, .recent-tags > * + *,
+  .bili-item > * + *, .result-card > * + *, .result-meta > * + *,
+  .summary > * + *, .result-platforms > * + * { margin-left: 8px; }
+  .bili-list > * + *, .results-list > * + *, .sk-list > * + * { margin-top: 8px; }
+}
+
+/* ============================================================
+   车机模式：超宽横屏 + 触摸 + 远距离观看 + 老内核
+   自动检测 / 顶栏手动开关 / ?car=1 强制
+   ========================================================== */
+html[data-car="on"] { scroll-padding-top: 130px; }
+
+/* 顶栏：不依赖 backdrop-filter，按钮达到车载触控尺寸 */
+html[data-car="on"] .topbar { background: var(--bg-panel); }
+html[data-car="on"] .topbar-inner { max-width: 1720px; height: 84px; padding: 0 40px; gap: 36px; }
+html[data-car="on"] .brand-mark { width: 38px; height: 38px; border-radius: 12px; }
+html[data-car="on"] .brand-name { font-size: 25px; }
+html[data-car="on"] .topbar-tag { display: none; }
+html[data-car="on"] .top-nav a { font-size: 19px; padding: 14px 26px; min-height: 56px; border-radius: 16px; }
+html[data-car="on"] .theme-btn,
+html[data-car="on"] .car-btn {
+  height: 56px; min-width: 100px; padding: 0 20px;
+  font-size: 17px; border-radius: 16px; border-width: 2px;
+}
+html[data-car="on"] .theme-icon, html[data-car="on"] .car-icon { font-size: 22px; }
+
+/* 首页：大字号、大按钮、少打字 */
+html[data-car="on"] .hero { padding: 40px 40px 32px; min-height: calc(100vh - 148px); gap: 26px; }
+html[data-car="on"] .badge { font-size: 18px; padding: 10px 22px; }
+html[data-car="on"] .headline { font-size: 50px; }
+html[data-car="on"] .subheadline { font-size: 22px; color: var(--text-2); }
+html[data-car="on"] .search-box--lg {
+  width: min(980px, 88vw); height: 84px;
+  padding: 0 10px 0 30px; border-radius: 20px; border-width: 2px;
+}
+html[data-car="on"] .search-icon { width: 26px; height: 26px; }
+html[data-car="on"] .search-box--lg .search-input { font-size: 24px; }
+html[data-car="on"] .search-box--lg .btn-search { padding: 20px 42px; font-size: 21px; }
+html[data-car="on"] .btn-clear { width: 38px; height: 38px; font-size: 22px; }
+html[data-car="on"] .hot-label { font-size: 18px; color: var(--text-2); }
+html[data-car="on"] .hot-tag,
+html[data-car="on"] .recent-tag {
+  padding: 14px 28px; font-size: 20px;
+  min-height: 56px; border-radius: 16px; border-width: 2px;
+}
+html[data-car="on"] .hero-foot { display: none; }
+html[data-car="on"] .car-hero-note { font-size: 17px; }
+
+/* 结果区：用满超宽屏，两列卡片，音乐前置 */
+html[data-car="on"] .results { max-width: 1720px; padding: 0 40px 64px; }
+html[data-car="on"] .results-search { top: 84px; padding: 20px 0; }
+html[data-car="on"] .search-box--sm {
+  width: min(760px, 100%); height: 68px;
+  padding: 0 8px 0 20px; border-radius: 18px; border-width: 2px;
+}
+html[data-car="on"] .search-box--sm .search-input { font-size: 20px; }
+html[data-car="on"] .search-box--sm .btn-search { padding: 15px 32px; font-size: 19px; }
+html[data-car="on"] .results-title { font-size: 30px; }
+html[data-car="on"] .summary span { font-size: 16px; padding: 8px 18px; }
+html[data-car="on"] .btn-back { font-size: 18px; padding: 15px 28px; min-height: 56px; border-width: 2px; }
+html[data-car="on"] .block-title h3 { font-size: 26px; }
+html[data-car="on"] .block-hint { font-size: 16px; color: var(--text-2); }
+html[data-car="on"] #resultContent { display: flex; flex-direction: column; }
+html[data-car="on"] #musicBlock { order: 1; }
+html[data-car="on"] #videoBlock { order: 2; }
+html[data-car="on"] #biliBlock { order: 3; }
+html[data-car="on"] #emptyTip { order: 4; }
+
+html[data-car="on"] .results-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+html[data-car="on"] .result-card {
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 18px; padding: 18px 22px; border-width: 2px; border-radius: 18px;
+}
+html[data-car="on"] .result-card:hover, html[data-car="on"] .bili-item:hover { transform: none; }
+html[data-car="on"] .result-poster { width: 88px; height: 120px; }
+html[data-car="on"] .result-name { font-size: 21px; }
+html[data-car="on"] .result-meta { font-size: 15px; color: var(--text-2); }
+html[data-car="on"] .result-detail { font-size: 16px; }
+html[data-car="on"] .result-platforms { grid-column: 1 / -1; justify-content: flex-start; max-width: none; }
+html[data-car="on"] .platform-link {
+  font-size: 16px; padding: 11px 20px; min-height: 48px;
+  border-radius: 14px; border-width: 2px;
+}
+
+/* B站：驻车提示 + 大列表项 */
+html[data-car="on"] .drive-note { font-size: 18px; padding: 16px 22px; border-radius: 16px; border-width: 2px; }
+html[data-car="on"] .bili-stage { grid-template-columns: minmax(0, 1fr) 420px; gap: 20px; }
+html[data-car="on"] .bili-player { border-width: 2px; }
+html[data-car="on"] .bili-list { max-height: 460px; gap: 12px; }
+html[data-car="on"] .bili-item { padding: 14px; min-height: 92px; gap: 14px; border-radius: 16px; border-width: 2px; }
+html[data-car="on"] .bili-item-thumb { width: 132px; height: 76px; }
+html[data-car="on"] .bili-item-title { font-size: 18px; }
+html[data-car="on"] .bili-item-meta { font-size: 14px; color: var(--text-2); }
+html[data-car="on"] .bili-title { font-size: 21px; }
+html[data-car="on"] .bili-meta { font-size: 15px; color: var(--text-2); }
+html[data-car="on"] .bili-open { font-size: 16px; }
+html[data-car="on"] .video-placeholder { font-size: 19px; }
+html[data-car="on"] .sk { animation: none; }
+html[data-car="on"] .skeleton-status { font-size: 18px; }
+html[data-car="on"] .toast { font-size: 18px; padding: 14px 28px; }
+html[data-car="on"] .footer { font-size: 14px; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
