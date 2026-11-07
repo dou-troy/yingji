@@ -16,6 +16,7 @@ import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -89,6 +90,14 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(false);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        }
+        // B站官方播放器是 file:// 页面里的「第三方 iframe」，取流要靠它自己域下的
+        // buvid3 等 Cookie。Android 5.0+ 的 WebView 默认拒绝第三方 Cookie，
+        // 不显式放开就会一直转圈 / 黑屏——这是车机上播放失败最常见的原因。
+        CookieManager cm = CookieManager.getInstance();
+        cm.setAcceptCookie(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            cm.setAcceptThirdPartyCookies(web, true);
         }
 
         web.addJavascriptInterface(new Bridge(), "YingjiCar");
@@ -182,6 +191,8 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         if (web != null) web.onPause();
+        // 把播放器域的 Cookie 落盘，下次进 App 不用重新握手
+        try { CookieManager.getInstance().flush(); } catch (Exception ignored) {}
     }
 
     @Override

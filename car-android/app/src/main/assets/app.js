@@ -327,11 +327,14 @@
     wrap.appendChild(f);
     $("videoPlaceholder").hidden = false;
     var p = $("videoPlaceholder").getElementsByTagName("p")[0];
-    if (p) p.textContent = "播放器加载中…";
+    // 浏览器预览里没有原生外壳，B站播放器常因第三方 Cookie 被拦而加载不出来
+    if (p) p.textContent = nativeReady() ? "播放器加载中…" : "浏览器预览通常无法内嵌播放，可点「在 B站打开」";
 
     loadTimer = setTimeout(function () {
       if (!$("videoPlaceholder").hidden) {
-        if (p) p.textContent = "加载较慢，可点「在 B站打开」，或检查车机网络";
+        if (p) p.textContent = nativeReady()
+          ? "加载较慢，可点「在 B站打开」，或检查车机网络"
+          : "预览环境加载不出播放器，请点「在 B站打开」或安装车机版 App";
       }
     }, 12000);
   }
