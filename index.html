@@ -2,97 +2,174 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    // 首屏前应用主题，避免深色用户看到浅色闪一下
+    try {
+      var t = localStorage.getItem("yingji_theme");
+      if (t === "light" || t === "dark" || t === "auto") {
+        document.documentElement.setAttribute("data-theme", t);
+      }
+    } catch (e) {}
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>映集 · 影音聚合检索</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="description" content="一个搜索框，找遍影视、音乐与 B站视频。聚合豆瓣、QQ音乐、网易云、哔哩哔哩的公开检索结果。" />
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#0a0a0f" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23ff6a3d'/%3E%3Cpath d='M26 19l23 13-23 13z' fill='white'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <div class="app">
-    <!-- 顶部栏 -->
+    <!-- ===== 顶部栏 ===== -->
     <header class="topbar">
-      <div class="logo">
-        <span class="logo-mark"></span>
-        <span class="logo-text">映集</span>
+      <div class="topbar-inner">
+        <a class="brand" href="#" id="brandLink" aria-label="映集首页">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span class="brand-name">映集</span>
+        </a>
+
+        <nav class="top-nav" id="topNav" hidden aria-label="结果分区导航">
+          <a href="#biliBlock" data-nav="bili">视频</a>
+          <a href="#videoBlock" data-nav="video">影视</a>
+          <a href="#musicBlock" data-nav="music">音乐</a>
+        </nav>
+
+        <div class="topbar-right">
+          <span class="topbar-tag">影音聚合检索</span>
+          <button class="theme-btn" id="themeBtn" type="button" aria-label="切换显示主题" title="当前：跟随系统（点击切换）">
+            <span class="theme-icon" id="themeIcon" aria-hidden="true">◐</span>
+            <span class="theme-label" id="themeLabel">跟随</span>
+          </button>
+        </div>
       </div>
-      <div class="topbar-tag">影音聚合检索</div>
     </header>
 
-    <!-- 首页：搜索区 -->
+    <!-- ===== 首页 ===== -->
     <section class="hero" id="heroSection">
-      <div class="badge">已接入 影视 · 音乐 · B站视频</div>
+      <div class="badge"><span class="badge-dot"></span>已接入 影视 · 音乐 · B站视频</div>
       <h1 class="headline">一个搜索框，找遍所有平台</h1>
-      <p class="subheadline">电影、剧集、音乐、B站视频……输入关键词，一次搜全。</p>
+      <p class="subheadline">电影、剧集、音乐、B站视频 —— 输入关键词，一次搜全。</p>
 
-      <div class="search-box">
-        <svg class="search-icon" viewBox="0 0 24 24" fill="none">
-          <circle cx="11" cy="11" r="7" stroke="#9A9AA5" stroke-width="2"/>
-          <path d="M16 16L20 20" stroke="#9A9AA5" stroke-width="2" stroke-linecap="round"/>
+      <div class="search-box search-box--lg">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+          <path d="M16 16L20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
         </svg>
-        <input type="text" id="searchInput" class="search-input" placeholder="搜索电影 / 剧集 / 音乐 / B站视频…" autocomplete="off" />
-        <button id="searchBtn" class="btn-search">立即检索</button>
+        <input type="text" id="searchInput" class="search-input" placeholder="搜索电影 / 剧集 / 音乐 / B站视频…"
+               autocomplete="off" list="searchHistory" aria-label="搜索关键词" />
+        <button type="button" class="btn-clear" id="clearBtn" hidden aria-label="清空">×</button>
+        <button type="button" id="searchBtn" class="btn-search">立即检索</button>
       </div>
 
       <div class="hot-row">
-        <span class="hot-label">大家都在搜：</span>
-        <button class="hot-tag" data-kw="流浪地球">流浪地球</button>
-        <button class="hot-tag" data-kw="周杰伦">周杰伦</button>
-        <button class="hot-tag" data-kw="三体">三体</button>
-        <button class="hot-tag" data-kw="庆余年">庆余年</button>
+        <span class="hot-label">大家都在搜</span>
+        <button type="button" class="hot-tag" data-kw="流浪地球">流浪地球</button>
+        <button type="button" class="hot-tag" data-kw="周杰伦">周杰伦</button>
+        <button type="button" class="hot-tag" data-kw="三体">三体</button>
+        <button type="button" class="hot-tag" data-kw="庆余年">庆余年</button>
       </div>
+
+      <p class="hero-foot">数据来源：豆瓣 · QQ音乐 · 网易云音乐 · 哔哩哔哩　｜　按 <kbd>/</kbd> 快速聚焦搜索</p>
     </section>
 
-    <!-- 检索结果区 -->
+    <!-- ===== 检索结果区 ===== -->
     <section class="results" id="resultsSection" hidden>
+      <!-- 结果页常驻搜索条 -->
+      <div class="results-search">
+        <div class="search-box search-box--sm">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+            <path d="M16 16L20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <input type="text" id="resultInput" class="search-input" placeholder="换个关键词再搜一次…"
+                 autocomplete="off" list="searchHistory" aria-label="搜索关键词" />
+          <button type="button" class="btn-clear" id="resultClearBtn" hidden aria-label="清空">×</button>
+          <button type="button" id="resultSearchBtn" class="btn-search">检索</button>
+        </div>
+      </div>
+
       <div class="results-head">
-        <div>
+        <div class="results-head-main">
           <h2 class="results-title" id="resultTitle">检索结果</h2>
-          <span class="source-badge" id="sourceBadge"></span>
+          <div class="summary" id="resultsSummary" hidden></div>
         </div>
-        <button class="btn-back" id="backBtn">← 返回搜索</button>
+        <button type="button" class="btn-back" id="backBtn">← 返回首页</button>
       </div>
 
-      <!-- B站视频播放区 -->
-      <div class="bili-block" id="biliBlock" hidden>
-        <div class="block-title">
-          <span>B站视频</span>
-          <span class="block-hint" id="biliCount"></span>
+      <!-- 加载骨架屏 -->
+      <div class="skeleton" id="skeleton" hidden aria-live="polite" aria-label="正在检索">
+        <div class="skeleton-status">
+          <span class="skeleton-spinner" aria-hidden="true"></span>
+          <span id="skeletonText">正在同时检索影视、音乐与 B站视频…</span>
         </div>
-        <div class="bili-stage">
-          <!-- 左侧播放器 -->
-          <div class="bili-player">
-            <div class="video-wrap" id="videoWrap">
-              <div class="video-placeholder" id="videoPlaceholder">
-                <div class="placeholder-spinner"></div>
-                <p>视频加载中…</p>
-              </div>
-              <div class="video-empty" id="videoEmpty" hidden>
-                <p>点击右侧列表选择要播放的视频</p>
-              </div>
-            </div>
-            <div class="bili-info">
-              <div class="bili-title" id="biliTitle">—</div>
-              <div class="bili-meta" id="biliMeta"></div>
-            </div>
+        <div class="skeleton-stage">
+          <div class="sk sk-player"></div>
+          <div class="sk-list">
+            <div class="sk sk-item"></div><div class="sk sk-item"></div><div class="sk sk-item"></div>
           </div>
-          <!-- 右侧列表：自主选择 -->
-          <div class="bili-list" id="biliList"></div>
         </div>
+        <div class="sk sk-card"></div>
+        <div class="sk sk-card"></div>
       </div>
 
-      <!-- 影视 + 音乐结果 -->
-      <div class="list-block" id="videoBlock" hidden>
-        <div class="block-title">影视</div>
-        <div class="results-list" id="videoList"></div>
-      </div>
-      <div class="list-block" id="musicBlock" hidden>
-        <div class="block-title">音乐</div>
-        <div class="results-list" id="musicList"></div>
+      <!-- 错误态 -->
+      <div class="error-state" id="errorState" hidden role="alert">
+        <div class="error-icon" aria-hidden="true">!</div>
+        <h3 id="errorTitle">检索没成功</h3>
+        <p id="errorMsg">网络好像不太顺畅，请稍后再试。</p>
+        <button type="button" class="btn-search btn-retry" id="retryBtn">重新检索</button>
       </div>
 
-      <div class="empty-tip" id="emptyTip" hidden>未找到相关结果，换个关键词试试</div>
+      <!-- 内容区 -->
+      <div id="resultContent" hidden>
+        <!-- B站视频 -->
+        <section class="bili-block block" id="biliBlock" hidden>
+          <div class="block-title">
+            <h3>B站视频</h3>
+            <span class="block-hint" id="biliCount"></span>
+          </div>
+          <div class="bili-stage">
+            <div class="bili-player">
+              <div class="video-wrap" id="videoWrap">
+                <div class="video-placeholder" id="videoPlaceholder" hidden>
+                  <span class="video-ph-icon" aria-hidden="true">▶</span>
+                  <p>点击右侧列表，选择要播放的视频</p>
+                </div>
+              </div>
+              <div class="bili-info">
+                <div class="bili-title" id="biliTitle">—</div>
+                <div class="bili-meta" id="biliMeta">从右侧列表挑一条开始看</div>
+                <a class="bili-open" id="biliOpen" href="#" target="_blank" rel="noopener noreferrer" hidden>在 B站打开 ↗</a>
+              </div>
+            </div>
+            <div class="bili-list" id="biliList" role="listbox" aria-label="B站视频列表"></div>
+          </div>
+        </section>
+
+        <!-- 影视 -->
+        <section class="block" id="videoBlock" hidden>
+          <div class="block-title"><h3>影视</h3><span class="block-hint" id="videoCount"></span></div>
+          <div class="results-list" id="videoList"></div>
+        </section>
+
+        <!-- 音乐 -->
+        <section class="block" id="musicBlock" hidden>
+          <div class="block-title"><h3>音乐</h3><span class="block-hint" id="musicCount"></span></div>
+          <div class="results-list" id="musicList"></div>
+        </section>
+
+        <div class="empty-tip" id="emptyTip" hidden>未找到相关结果，换个关键词试试</div>
+      </div>
     </section>
+
+    <footer class="footer" id="footer">
+      <span>映集 · 聚合公开检索结果，内容版权归各平台所有</span>
+    </footer>
   </div>
 
-  <script src="app.js"></script>
+  <datalist id="searchHistory"></datalist>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

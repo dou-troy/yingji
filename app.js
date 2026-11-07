@@ -1,329 +1,513 @@
-// 映集 · 影音聚合检索
-// 首页搜索框 → 搜索后结果区展示：B站视频播放 + 影视 + 音乐
+/* ============================================================
+   映集 · 影音聚合检索（前端逻辑）
+   - 前后端同源，API 用相对路径，任何设备打开都正确
+   - 三态主题、加载骨架、超时重试、结果页常驻搜索、区块导航
+   ========================================================== */
+(function () {
+  "use strict";
 
-// ===== 后端 API 地址解析 =====
-// 后端通过 express.static 直接托管前端，前后端永远同源，
-// 因此 API 直接用相对路径 /api/... 即可，任何设备打开都正确。
-// 仅当「前端单独托管、后端在别处」时才需要手动指定地址。
-const REMOTE_API_KEY = "yingji_api_base";
-
-function resolveApiBase() {
-  // 优先：读取手动配置的后端地址（仅在前后端分离部署时使用）
-  try {
-    const saved = localStorage.getItem(REMOTE_API_KEY);
-    if (saved && /^https?:\/\//.test(saved)) return saved.replace(/\/+$/, "");
-  } catch (e) {
-    /* localStorage 不可用时忽略 */
+  /* ---------- API 地址 ---------- */
+  const REMOTE_API_KEY = "yingji_api_base";
+  function resolveApiBase() {
+    try {
+      const saved = localStorage.getItem(REMOTE_API_KEY);
+      if (saved && /^https?:\/\//i.test(saved)) return saved.replace(/\/+$/, "");
+    } catch (e) { /* localStorage 不可用时忽略 */ }
+    return ""; // 默认同源
   }
-  // 默认：同源（空字符串表示相对路径，前端后端同域名）
-  return "";
-}
+  let API_BASE = resolveApiBase();
+  const SEARCH_API = () => `${API_BASE}/api/search`;
+  window.__setYingjiApi = function (url) {
+    const clean = String(url || "").replace(/\/+$/, "");
+    try { localStorage.setItem(REMOTE_API_KEY, clean); } catch (e) {}
+    API_BASE = clean;
+    return API_BASE;
+  };
 
-let API_BASE = resolveApiBase();
-const SEARCH_API = () => `${API_BASE}/api/search`;
+  /* ---------- DOM ---------- */
+  const $ = (id) => document.getElementById(id);
+  const heroSection = $("heroSection"), resultsSection = $("resultsSection");
+  const resultTitle = $("resultTitle"), resultsSummary = $("resultsSummary");
+  const backBtn = $("backBtn"), brandLink = $("brandLink"), topNav = $("topNav");
+  const searchInput = $("searchInput"), resultInput = $("resultInput");
+  const searchBtn = $("searchBtn"), resultSearchBtn = $("resultSearchBtn");
+  const clearBtn = $("clearBtn"), resultClearBtn = $("resultClearBtn");
+  const skeleton = $("skeleton"), skeletonText = $("skeletonText");
+  const errorState = $("errorState"), errorMsg = $("errorMsg"), retryBtn = $("retryBtn");
+  const resultContent = $("resultContent"), emptyTip = $("emptyTip");
+  const biliBlock = $("biliBlock"), biliCount = $("biliCount"), biliList = $("biliList");
+  const videoWrap = $("videoWrap"), videoPlaceholder = $("videoPlaceholder");
+  const biliTitle = $("biliTitle"), biliMeta = $("biliMeta"), biliOpen = $("biliOpen");
+  const videoBlock = $("videoBlock"), videoCount = $("videoCount"), videoList = $("videoList");
+  const musicBlock = $("musicBlock"), musicCount = $("musicCount"), musicList = $("musicList");
+  const themeBtn = $("themeBtn"), themeIcon = $("themeIcon"), themeLabel = $("themeLabel");
+  const toastEl = $("toast"), historyList = $("searchHistory");
 
-// 暴露一个全局方法，方便前后端分离部署时把后端地址写进页面/控制台
-window.__setYingjiApi = (url) => {
-  try {
-    localStorage.setItem(REMOTE_API_KEY, url.replace(/\/+$/, ""));
-  } catch (e) {}
-  API_BASE = url.replace(/\/+$/, "");
-  return API_BASE;
-};
-
-const heroSection = document.getElementById("heroSection");
-const resultsSection = document.getElementById("resultsSection");
-const resultTitle = document.getElementById("resultTitle");
-const sourceBadge = document.getElementById("sourceBadge");
-const backBtn = document.getElementById("backBtn");
-const searchInput = document.getElementById("searchInput");
-const searchBtn = document.getElementById("searchBtn");
-const hotTags = document.querySelectorAll(".hot-tag");
-
-const biliBlock = document.getElementById("biliBlock");
-const videoWrap = document.getElementById("videoWrap");
-const videoPlaceholder = document.getElementById("videoPlaceholder");
-const videoEmpty = document.getElementById("videoEmpty");
-const biliTitle = document.getElementById("biliTitle");
-const biliMeta = document.getElementById("biliMeta");
-const biliCount = document.getElementById("biliCount");
-const biliList = document.getElementById("biliList");
-
-const videoBlock = document.getElementById("videoBlock");
-const musicBlock = document.getElementById("musicBlock");
-const videoList = document.getElementById("videoList");
-const musicList = document.getElementById("musicList");
-const emptyTip = document.getElementById("emptyTip");
-
-// ===== B站播放状态 =====
-let biliPlaylist = [];
-let biliIndex = -1;
-
-function formatCount(n) {
-  if (n >= 100000000) return (n / 100000000).toFixed(1) + "亿";
-  if (n >= 10000) return (n / 10000).toFixed(1) + "万";
-  return String(n);
-}
-
-// ===== B站播放 =====
-function renderBiliPlayer() {
-  const v = biliPlaylist[biliIndex];
-  videoEmpty.hidden = true;
-  videoPlaceholder.hidden = false;
-
-  const old = videoWrap.querySelector("iframe");
-  if (old) old.remove();
-
-  const iframe = document.createElement("iframe");
-  iframe.src = v.embed;
-  iframe.setAttribute("allowfullscreen", "true");
-  iframe.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
-  iframe.setAttribute("scrolling", "no");
-  iframe.addEventListener("load", () => {
-    videoPlaceholder.hidden = true;
+  /* ---------- 主题：跟随系统 / 浅色 / 深色 ---------- */
+  const THEME_KEY = "yingji_theme";
+  const THEME_ORDER = ["auto", "light", "dark"];
+  const THEME_META = {
+    auto:  { icon: "◐", label: "跟随", tip: "当前：跟随系统（点击切换为浅色）" },
+    light: { icon: "☀", label: "浅色", tip: "当前：浅色（点击切换为深色）" },
+    dark:  { icon: "☾", label: "深色", tip: "当前：深色（点击恢复跟随系统）" },
+  };
+  function readTheme() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return THEME_ORDER.indexOf(v) >= 0 ? v : "auto";
+    } catch (e) { return "auto"; }
+  }
+  function applyTheme(mode, silent) {
+    document.documentElement.setAttribute("data-theme", mode);
+    const meta = THEME_META[mode];
+    themeIcon.textContent = meta.icon;
+    themeLabel.textContent = meta.label;
+    themeBtn.title = meta.tip;
+    themeBtn.setAttribute("aria-label", meta.tip);
+    try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
+    if (!silent) showToast(`已切换为「${meta.label}」主题`);
+  }
+  applyTheme(readTheme(), true);
+  themeBtn.addEventListener("click", () => {
+    const next = THEME_ORDER[(THEME_ORDER.indexOf(readTheme()) + 1) % THEME_ORDER.length];
+    applyTheme(next);
   });
-  videoWrap.appendChild(iframe);
 
-  biliTitle.textContent = v.name;
-  const parts = [];
-  if (v.author) parts.push(`UP主：${v.author}`);
-  if (v.duration) parts.push(v.duration);
-  if (v.play) parts.push(`${formatCount(v.play)} 播放`);
-  biliMeta.textContent = parts.join(" · ");
+  /* ---------- 工具 ---------- */
+  let toastTimer = null;
+  function showToast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("is-visible");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("is-visible"), 2200);
+  }
+  function safeUrl(u) {
+    if (typeof u !== "string") return "";
+    const s = u.trim();
+    return /^https?:\/\//i.test(s) ? s : ""; // 过滤 javascript: / data: 等
+  }
+  function el(tag, cls, text) {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function formatCount(n) {
+    if (!n) return "0";
+    if (n >= 100000000) return (n / 100000000).toFixed(1) + "亿";
+    if (n >= 10000) return (n / 10000).toFixed(1) + "万";
+    return String(n);
+  }
+  function sourceLabel(s) {
+    return ({ douban: "豆瓣", qq: "QQ音乐", netease: "网易云", tmdb: "TMDB", mock: "演示" })[s] || "真实";
+  }
+  function sourceBadgeText(source) {
+    return ({
+      douban: "数据源：豆瓣（真实）",
+      mixed: "数据源：豆瓣 + 音乐平台（真实）",
+      music: "数据源：QQ音乐 + 网易云（真实）",
+      netease: "数据源：网易云（真实）",
+      qq: "数据源：QQ音乐（真实）",
+      tmdb: "数据源：TMDB（真实）",
+      mock: "数据源：本地演示",
+    })[source] || "数据源：真实 + 演示";
+  }
 
-  // 列表高亮
-  [...biliList.children].forEach((el, i) => {
-    el.classList.toggle("active", i === biliIndex);
-  });
-}
+  /* ---------- 搜索历史（datalist） ---------- */
+  const HISTORY_KEY = "yingji_history";
+  function getHistory() {
+    try {
+      const v = JSON.parse(localStorage.getItem(HISTORY_KEY));
+      return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+    } catch (e) { return []; }
+  }
+  function renderHistory(list) {
+    const frag = document.createDocumentFragment();
+    list.forEach((kw) => {
+      const opt = document.createElement("option");
+      opt.value = kw;
+      frag.appendChild(opt);
+    });
+    historyList.replaceChildren(frag);
+  }
+  function pushHistory(kw) {
+    const list = [kw, ...getHistory().filter((x) => x !== kw)].slice(0, 8);
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch (e) {}
+    renderHistory(list);
+  }
+  renderHistory(getHistory());
 
-// 渲染右侧列表 + 初始播放第一条
-function renderBili() {
-  biliList.innerHTML = "";
-  biliCount.textContent = `共 ${biliPlaylist.length} 条 · 点击选择播放`;
+  /* ---------- 图片（失败时显示首字兜底，不用 background-image） ---------- */
+  function makePoster(item, cls) {
+    const box = el("div", cls, (item.name || "?").slice(0, 1));
+    const url = safeUrl(item.poster);
+    if (!url) { box.classList.add("is-fallback"); return box; }
+    const img = document.createElement("img");
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    // 绝对定位覆盖文字：加载失败隐藏图片即露出兜底文字
+    img.style.cssText = "position:absolute;inset:0;width:100%;height:100%;object-fit:cover;";
+    img.addEventListener("error", () => { img.classList.add("is-broken"); box.classList.add("is-fallback"); });
+    img.src = url;
+    box.appendChild(img);
+    return box;
+  }
 
-  if (!biliPlaylist.length) {
-    videoWrap.querySelector("iframe")?.remove();
-    videoPlaceholder.hidden = true;
-    videoEmpty.hidden = false;
+  /* ---------- B站播放器 ---------- */
+  let biliPlaylist = [], biliIndex = -1;
+
+  function clearPlayer() {
+    const old = videoWrap.querySelector("iframe");
+    if (old) old.remove(); // 返回首页时移除，避免后台继续播放
+    videoPlaceholder.hidden = false;
+    const p = videoPlaceholder.querySelector("p");
+    if (p) p.textContent = "点击右侧列表，选择要播放的视频";
     biliTitle.textContent = "—";
-    biliMeta.textContent = "";
-    return;
+    biliMeta.textContent = "从右侧列表挑一条开始看";
+    biliOpen.hidden = true;
   }
 
-  biliPlaylist.forEach((v, i) => {
-    const item = document.createElement("div");
-    item.className = "bili-item";
+  function playBili(index) {
+    const v = biliPlaylist[index];
+    if (!v || !safeUrl(v.embed)) return;
+    biliIndex = index;
 
-    const thumb = document.createElement("div");
-    thumb.className = "bili-item-thumb";
-    if (v.poster) thumb.style.backgroundImage = `url("${v.poster}")`;
-    item.appendChild(thumb);
+    const old = videoWrap.querySelector("iframe");
+    if (old) old.remove();
 
-    const info = document.createElement("div");
-    info.className = "bili-item-info";
+    videoPlaceholder.hidden = false;
+    const p = videoPlaceholder.querySelector("p");
+    if (p) p.textContent = "播放器加载中…";
 
-    const title = document.createElement("div");
-    title.className = "bili-item-title";
-    title.textContent = v.name;
-    info.appendChild(title);
+    const iframe = document.createElement("iframe");
+    iframe.title = `${v.name || "B站视频"} · 哔哩哔哩播放器`;
+    iframe.setAttribute("allowfullscreen", "true");
+    iframe.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
+    iframe.setAttribute("scrolling", "no");
+    iframe.addEventListener("load", () => { videoPlaceholder.hidden = true; });
+    iframe.src = v.embed;
+    videoWrap.appendChild(iframe);
+    // B站 iframe 偶发被网络拦截时不触发 load，给出可操作的提示而不是一直转圈
+    setTimeout(() => {
+      if (!videoPlaceholder.hidden && biliIndex === index) {
+        const pp = videoPlaceholder.querySelector("p");
+        if (pp) pp.textContent = "播放器加载较慢，可点下方「在 B站打开」";
+      }
+    }, 8000);
 
-    const meta = document.createElement("div");
-    meta.className = "bili-item-meta";
+    biliTitle.textContent = v.name || "—";
     const parts = [];
-    if (v.author) parts.push(`<span>${v.author}</span>`);
-    if (v.duration) parts.push(`<span>${v.duration}</span>`);
-    if (v.play) parts.push(`<span>${formatCount(v.play)} 播放</span>`);
-    meta.innerHTML = parts.join("");
+    if (v.author) parts.push("UP主：" + v.author);
+    if (v.duration) parts.push(v.duration);
+    if (v.play) parts.push(formatCount(v.play) + " 播放");
+    biliMeta.textContent = parts.join(" · ");
+
+    const openUrl = safeUrl(v.url);
+    biliOpen.hidden = !openUrl;
+    if (openUrl) biliOpen.href = openUrl;
+
+    Array.prototype.forEach.call(biliList.children, (node, i) => {
+      node.classList.toggle("is-active", i === index);
+      node.setAttribute("aria-selected", i === index ? "true" : "false");
+    });
+  }
+
+  function renderBili() {
+    const frag = document.createDocumentFragment();
+    biliCount.textContent = `共 ${biliPlaylist.length} 条 · 点击列表切换播放`;
+
+    if (!biliPlaylist.length) {
+      biliList.replaceChildren();
+      clearPlayer();
+      return;
+    }
+
+    biliPlaylist.forEach((v, i) => {
+      const item = el("div", "bili-item");
+      item.setAttribute("role", "option");
+      item.setAttribute("tabindex", "0");
+      item.setAttribute("aria-selected", "false");
+
+      const thumb = makePoster(v, "bili-item-thumb");
+      item.appendChild(thumb);
+
+      const info = el("div", "bili-item-info");
+      info.appendChild(el("div", "bili-item-title", v.name || "未命名视频"));
+      const meta = el("div", "bili-item-meta");
+      if (v.author) meta.appendChild(el("span", "", v.author));
+      if (v.duration) meta.appendChild(el("span", "", v.duration));
+      if (v.play) meta.appendChild(el("span", "", formatCount(v.play) + " 播放"));
+      info.appendChild(meta);
+      item.appendChild(info);
+
+      item.addEventListener("click", () => playBili(i));
+      item.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); playBili(i); }
+      });
+      frag.appendChild(item);
+    });
+    biliList.replaceChildren(frag);
+    playBili(0); // 默认展示第一条（播放器 autoplay=0，不会自动出声）
+  }
+
+  /* ---------- 结果卡片（全部 DOM API 构建，避免第三方字段注入） ---------- */
+  function buildCard(item) {
+    const card = el("div", "result-card");
+    card.appendChild(makePoster(item, "result-poster"));
+
+    const info = el("div", "result-info");
+    info.appendChild(el("div", "result-name", item.name || "未命名"));
+
+    const meta = el("div", "result-meta");
+    if (item.type) meta.appendChild(el("span", "", String(item.type)));
+    if (item.year) meta.appendChild(el("span", "", String(item.year)));
+    if (item.artist) meta.appendChild(el("span", "", String(item.artist)));
+    if (item.overview) meta.appendChild(el("span", "", String(item.overview)));
+    if (item.rating) meta.appendChild(el("span", "result-rating", "★ " + String(item.rating)));
+    if (item.source) meta.appendChild(el("span", "result-source-tag", sourceLabel(item.source)));
     info.appendChild(meta);
 
-    item.appendChild(info);
-    item.addEventListener("click", () => {
-      biliIndex = i;
-      renderBiliPlayer();
+    const detailUrl = safeUrl(item.url);
+    if (detailUrl && /(douban\.com|music\.163\.com|y\.qq\.com|bilibili\.com)/i.test(detailUrl)) {
+      const detail = el("a", "result-detail", /music|y\.qq/i.test(detailUrl) ? "试听 ›" : "查看详情 ›");
+      detail.href = detailUrl;
+      detail.target = "_blank";
+      detail.rel = "noopener noreferrer";
+      info.appendChild(detail);
+    }
+    card.appendChild(info);
+
+    if (Array.isArray(item.platforms) && item.platforms.length) {
+      const platforms = el("div", "result-platforms");
+      item.platforms.slice(0, 6).forEach((p, idx) => {
+        const url = safeUrl(p && p.url);
+        if (!url) return;
+        const a = el("a", "platform-link" + (idx === 0 ? " primary" : ""), String(p.name || "打开"));
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        platforms.appendChild(a);
+      });
+      if (platforms.children.length) card.appendChild(platforms);
+    }
+    return card;
+  }
+
+  function renderList(container, list) {
+    const frag = document.createDocumentFragment();
+    list.forEach((item) => frag.appendChild(buildCard(item)));
+    container.replaceChildren(frag);
+  }
+
+  /* ---------- 检索状态 ---------- */
+  const REQUEST_TIMEOUT = 25000;
+  const FRONT_TTL = 5 * 60 * 1000;
+  const frontCache = new Map();
+  let activeController = null, lastKeyword = "";
+
+  function activeInput() { return heroSection.hidden ? resultInput : searchInput; }
+
+  function showResultsView() {
+    heroSection.hidden = true;
+    resultsSection.hidden = false;
+  }
+  function setQueryParam(kw) {
+    try {
+      const url = new URL(window.location.href);
+      if (kw) url.searchParams.set("q", kw);
+      else url.searchParams.delete("q");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    } catch (e) { /* 受限环境忽略 */ }
+  }
+
+  function showHero() {
+    if (activeController) { activeController.abort(); activeController = null; }
+    setQueryParam("");
+    clearPlayer();
+    resultsSection.hidden = true;
+    heroSection.hidden = false;
+    topNav.hidden = true;
+    skeleton.hidden = true;
+    errorState.hidden = true;
+    setButtonsDisabled(false);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    setTimeout(() => searchInput.focus(), 0);
+  }
+  function setButtonsDisabled(disabled) {
+    searchBtn.disabled = disabled;
+    resultSearchBtn.disabled = disabled;
+  }
+  function setLoading(kw) {
+    skeleton.hidden = false;
+    errorState.hidden = true;
+    resultContent.hidden = true;
+    resultsSummary.hidden = true;
+    topNav.hidden = true;
+    resultTitle.textContent = `“${kw}” 检索中…`;
+    skeletonText.textContent = "正在同时检索影视、音乐与 B站视频…";
+    setButtonsDisabled(true);
+  }
+  function showError(msg) {
+    skeleton.hidden = true;
+    resultContent.hidden = true;
+    resultsSummary.hidden = true;
+    topNav.hidden = true;
+    errorState.hidden = false;
+    errorMsg.textContent = msg;
+    resultTitle.textContent = "检索没成功";
+  }
+  function renderSummary(data, fromCache) {
+    const chips = [];
+    if (data.bilibili && data.bilibili.length) chips.push(`B站 ${data.bilibili.length} 条`);
+    if (data.video && data.video.length) chips.push(`影视 ${data.video.length} 部`);
+    if (data.music && data.music.length) chips.push(`音乐 ${data.music.length} 首`);
+    if (typeof data.elapsed === "number") chips.push(`耗时 ${(data.elapsed / 1000).toFixed(1)}s`);
+    if (fromCache) chips.push("缓存命中");
+    const frag = document.createDocumentFragment();
+    const source = el("span", "summary-source", sourceBadgeText(data.source));
+    frag.appendChild(source);
+    chips.forEach((t) => frag.appendChild(el("span", "", t)));
+    resultsSummary.replaceChildren(frag);
+    resultsSummary.hidden = false;
+  }
+  function updateNav(bili, video, music) {
+    const map = { bili: !!bili.length, video: !!video.length, music: !!music.length };
+    Array.prototype.forEach.call(topNav.querySelectorAll("a"), (a) => {
+      a.hidden = !map[a.dataset.nav];
     });
-    biliList.appendChild(item);
+    topNav.hidden = !(map.bili || map.video || map.music);
+  }
+
+  function renderResults(data, fromCache) {
+    const video = Array.isArray(data.video) ? data.video : [];
+    const music = Array.isArray(data.music) ? data.music : [];
+    const bilibili = Array.isArray(data.bilibili) ? data.bilibili : [];
+
+    skeleton.hidden = true;
+    errorState.hidden = true;
+    resultContent.hidden = false;
+    resultTitle.textContent = `“${data.query || ""}” 的检索结果`;
+    renderSummary({ ...data, video, music, bilibili }, fromCache);
+
+    if (bilibili.length) {
+      biliBlock.hidden = false;
+      biliPlaylist = bilibili;
+      renderBili();
+    } else {
+      biliBlock.hidden = true;
+      biliPlaylist = [];
+      biliIndex = -1;
+      biliList.replaceChildren();
+      clearPlayer();
+    }
+
+    if (video.length) {
+      videoBlock.hidden = false;
+      videoCount.textContent = `${video.length} 部`;
+      renderList(videoList, video);
+    } else videoBlock.hidden = true;
+
+    if (music.length) {
+      musicBlock.hidden = false;
+      musicCount.textContent = `${music.length} 首`;
+      renderList(musicList, music);
+    } else musicBlock.hidden = true;
+
+    emptyTip.hidden = !!(bilibili.length || video.length || music.length);
+    updateNav(bilibili, video, music);
+  }
+
+  async function doSearch(rawKeyword) {
+    const kw = String(rawKeyword != null ? rawKeyword : activeInput().value).trim();
+    if (!kw) { activeInput().focus(); return; }
+
+    lastKeyword = kw;
+    searchInput.value = kw;
+    resultInput.value = kw;
+    syncClearBtns();
+    showResultsView();
+    window.scrollTo({ top: 0, behavior: "auto" });
+    pushHistory(kw);
+    setQueryParam(kw); // 地址栏带上关键词，可直接复制分享结果页
+
+    // 前端内存缓存：返回刚才看过的词时秒开
+    const hit = frontCache.get(kw);
+    if (hit && Date.now() - hit.t < FRONT_TTL) {
+      setButtonsDisabled(false);
+      renderResults(hit.data, true);
+      return;
+    }
+
+    setLoading(kw);
+    if (activeController) activeController.abort();
+    const controller = new AbortController();
+    activeController = controller;
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT);
+
+    try {
+      const resp = await fetch(`${SEARCH_API()}?q=${encodeURIComponent(kw)}`, { signal: controller.signal });
+      if (!resp.ok) throw new Error(`服务返回 ${resp.status}`);
+      const data = await resp.json();
+      if (activeController !== controller) return; // 已被更新的搜索取代
+      frontCache.set(kw, { t: Date.now(), data });
+      renderResults(data, data.cached === true);
+    } catch (err) {
+      if (activeController !== controller) return;
+      const isAbort = err && err.name === "AbortError";
+      showError(isAbort && timedOut
+        ? "请求超时了，可能是服务正在唤醒。点「重新检索」再试一次。"
+        : `检索失败：${(err && err.message) || "网络异常，请稍后重试"}`);
+    } finally {
+      clearTimeout(timer);
+      if (activeController === controller) {
+        activeController = null;
+        setButtonsDisabled(false);
+      }
+    }
+  }
+
+  /* ---------- 交互绑定 ---------- */
+  function syncClearBtns() {
+    clearBtn.hidden = !searchInput.value;
+    resultClearBtn.hidden = !resultInput.value;
+  }
+  searchInput.addEventListener("input", syncClearBtns);
+  resultInput.addEventListener("input", syncClearBtns);
+  function clearInput(input) { input.value = ""; syncClearBtns(); input.focus(); }
+  clearBtn.addEventListener("click", () => clearInput(searchInput));
+  resultClearBtn.addEventListener("click", () => clearInput(resultInput));
+
+  searchBtn.addEventListener("click", () => doSearch());
+  resultSearchBtn.addEventListener("click", () => doSearch());
+  [searchInput, resultInput].forEach((input) => {
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") doSearch(); });
   });
 
-  // 默认播放第一条
-  biliIndex = 0;
-  renderBiliPlayer();
-}
+  document.querySelectorAll(".hot-tag").forEach((tag) => {
+    tag.addEventListener("click", () => doSearch(tag.dataset.kw));
+  });
+  backBtn.addEventListener("click", showHero);
+  brandLink.addEventListener("click", (e) => { e.preventDefault(); showHero(); });
+  retryBtn.addEventListener("click", () => doSearch(lastKeyword));
 
-// ===== 结果卡片渲染 =====
-function buildCard(item) {
-  const card = document.createElement("div");
-  card.className = "result-card";
+  document.addEventListener("keydown", (e) => {
+    const tag = (e.target && e.target.tagName) || "";
+    const typing = /INPUT|TEXTAREA/.test(tag) || (e.target && e.target.isContentEditable);
+    if (e.key === "/" && !typing) {
+      e.preventDefault();
+      (heroSection.hidden ? resultInput : searchInput).focus();
+    } else if (e.key === "Escape" && heroSection.hidden) {
+      showHero(); // 结果页按 Esc 返回首页
+    }
+  });
 
-  // 海报
-  const poster = document.createElement("div");
-  poster.className = "result-poster";
-  if (item.poster && /^https?:/.test(item.poster)) {
-    poster.style.backgroundImage = `url("${item.poster}")`;
-  } else {
-    poster.classList.add("no-img");
-    poster.textContent = (item.name || "?").slice(0, 1);
-  }
-  card.appendChild(poster);
+  syncClearBtns();
 
-  // 信息
-  const info = document.createElement("div");
-  info.className = "result-info";
-
-  const name = document.createElement("div");
-  name.className = "result-name";
-  name.textContent = item.name;
-  info.appendChild(name);
-
-  const meta = document.createElement("div");
-  meta.className = "result-meta";
-  const metaParts = [];
-  if (item.type) metaParts.push(`<span>${item.type}</span>`);
-  if (item.year) metaParts.push(`<span>${item.year}</span>`);
-  if (item.artist) metaParts.push(`<span>${item.artist}</span>`);
-  if (item.overview) metaParts.push(`<span>${item.overview}</span>`);
-  if (item.rating) metaParts.push(`<span class="result-rating">★ ${item.rating}</span>`);
-  if (item.source) metaParts.push(`<span class="result-source-tag">${sourceLabel(item.source)}</span>`);
-  meta.innerHTML = metaParts.join("");
-  info.appendChild(meta);
-
-  // 详情链接
-  if (item.url && /(douban\.com|music\.163\.com|y\.qq\.com|bilibili\.com)/.test(item.url)) {
-    const detail = document.createElement("a");
-    detail.className = "result-detail";
-    detail.textContent = /music/.test(item.url) ? "试听 ›" : "查看详情 ›";
-    detail.href = item.url;
-    detail.target = "_blank";
-    detail.rel = "noopener noreferrer";
-    info.appendChild(detail);
-  }
-
-  card.appendChild(info);
-
-  // 平台链接
-  if (item.platforms && item.platforms.length) {
-    const platforms = document.createElement("div");
-    platforms.className = "result-platforms";
-    item.platforms.slice(0, 6).forEach((p, idx) => {
-      const a = document.createElement("a");
-      a.className = "platform-link" + (idx === 0 ? " primary" : "");
-      a.textContent = p.name;
-      a.href = p.url;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      platforms.appendChild(a);
-    });
-    card.appendChild(platforms);
-  }
-
-  return card;
-}
-
-function sourceLabel(s) {
-  return s === "douban" ? "豆瓣"
-    : s === "qq" ? "QQ音乐"
-    : s === "netease" ? "网易云"
-    : s === "tmdb" ? "TMDB"
-    : s === "mock" ? "演示"
-    : "真实";
-}
-
-// ===== 结果渲染 =====
-function renderResults(data) {
-  const { query, source, video = [], music = [], bilibili = [] } = data;
-
-  resultTitle.textContent = `“${query}” 的检索结果`;
-  sourceBadge.textContent = sourceBadgeText(source);
-
-  // B站视频
-  if (bilibili.length) {
-    biliBlock.hidden = false;
-    biliPlaylist = bilibili;
-    renderBili();
-  } else {
-    biliBlock.hidden = true;
-    biliPlaylist = [];
-    biliList.innerHTML = "";
-  }
-
-  // 影视
-  if (video.length) {
-    videoBlock.hidden = false;
-    videoList.innerHTML = "";
-    video.forEach((item) => videoList.appendChild(buildCard(item)));
-  } else {
-    videoBlock.hidden = true;
-  }
-
-  // 音乐
-  if (music.length) {
-    musicBlock.hidden = false;
-    musicList.innerHTML = "";
-    music.forEach((item) => musicList.appendChild(buildCard(item)));
-  } else {
-    musicBlock.hidden = true;
-  }
-
-  // 空态
-  const hasAny = bilibili.length || video.length || music.length;
-  emptyTip.hidden = hasAny;
-}
-
-function sourceBadgeText(source) {
-  const map = {
-    douban: "数据源：豆瓣（真实）",
-    mixed: "数据源：豆瓣 + 音乐平台（真实）",
-    netease: "数据源：网易云（真实）",
-    qq: "数据源：QQ音乐（真实）",
-    tmdb: "数据源：TMDB（真实）",
-    mock: "数据源：本地演示",
-  };
-  return map[source] || "数据源：真实 + 演示";
-}
-
-// ===== 视图切换 =====
-function showHero() {
-  resultsSection.hidden = true;
-  heroSection.hidden = false;
-}
-
-function showResults() {
-  heroSection.hidden = true;
-  resultsSection.hidden = false;
-}
-
-// ===== 搜索 =====
-async function doSearch(keyword) {
-  const kw = (keyword || searchInput.value).trim();
-  if (!kw) return;
-  showResults();
+  // 支持 ?q=关键词 直接打开检索结果（可分享的搜索链接）
   try {
-    const resp = await fetch(`${SEARCH_API()}?q=${encodeURIComponent(kw)}`);
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    renderResults(data);
-    window.scrollTo({ top: 0 });
-  } catch (err) {
-    console.warn("搜索失败：", err.message);
-    sourceBadge.textContent = "";
-    emptyTip.hidden = false;
-    emptyTip.textContent = "搜索失败，请检查后端服务后重试";
-    biliBlock.hidden = true;
-    videoBlock.hidden = true;
-    musicBlock.hidden = true;
-  }
-}
-
-// ===== 事件绑定 =====
-searchBtn.addEventListener("click", () => doSearch());
-searchInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") doSearch();
-});
-backBtn.addEventListener("click", showHero);
-
-hotTags.forEach((tag) => {
-  tag.addEventListener("click", () => {
-    searchInput.value = tag.dataset.kw;
-    doSearch(tag.dataset.kw);
-  });
-});
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (q && q.trim()) doSearch(q.trim());
+  } catch (e) {}
+})();
