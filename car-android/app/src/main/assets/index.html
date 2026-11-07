@@ -1,144 +1,167 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark" data-car="on">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,minimum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="format-detection" content="telephone=no">
 <title>映集 · 车机版</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="app" id="app">
 
-<div id="app">
+  <!-- ===== 顶部栏（与网页版同构） ===== -->
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="#" id="brandLink" aria-label="映集首页">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">映集</span>
+      </a>
 
-  <!-- 左侧固定操作轨：搜索、分类、快捷词、设置 -->
-  <aside id="sidebar">
-    <div class="brand">
-      <div class="brand-mark">&#9654;</div>
-      <div>
-        <div class="brand-name">映集</div>
-        <div class="brand-sub">车机版 · 影音检索</div>
+      <nav class="top-nav" id="topNav" hidden aria-label="结果分区导航">
+        <a href="#biliBlock" data-nav="bili">视频</a>
+        <a href="#videoBlock" data-nav="video">影视</a>
+        <a href="#musicBlock" data-nav="music">音乐</a>
+      </nav>
+
+      <div class="topbar-right">
+        <span class="topbar-tag">车机版 · 影音聚合检索</span>
+        <span class="net-state" id="netState"><i></i><span id="netText">连接中…</span></span>
+        <button class="pill-btn" id="settingBtn" type="button">服务设置</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== 首页（与网页版同构） ===== -->
+  <section class="hero" id="heroSection">
+    <div class="badge"><span class="badge-dot"></span>已接入 影视 · 音乐 · B站视频</div>
+    <h1 class="headline">一个搜索框，找遍所有平台</h1>
+    <p class="subheadline">电影、剧集、音乐、B站视频 —— 输入关键词，一次搜全。</p>
+
+    <div class="search-box search-box--lg">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+        <path d="M16 16L20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <input type="text" id="q" class="search-input" placeholder="搜索电影 / 剧集 / 音乐 / B站视频…" autocomplete="off">
+      <button type="button" id="goBtn" class="btn-search">立即检索</button>
+    </div>
+
+    <div class="hot-row">
+      <span class="hot-label">快捷搜索</span>
+      <div class="hot-tags" id="quick"></div>
+    </div>
+
+    <p class="hero-foot">数据来源：豆瓣 · QQ音乐 · 网易云音乐 · 哔哩哔哩</p>
+    <div class="drive-note hero-note">
+      <span class="drive-note-icon" aria-hidden="true">&#9888;</span>
+      <span>行车安全提示：视频请驻车后观看，行驶中车机通常会自动限制视频播放。</span>
+    </div>
+  </section>
+
+  <!-- ===== 结果区（与网页版同构） ===== -->
+  <section class="results" id="resultsSection" hidden>
+    <div class="results-search">
+      <div class="search-box search-box--sm">
+        <svg class="search-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2"/>
+          <path d="M16 16L20 20" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <input type="text" id="resultInput" class="search-input" placeholder="换个关键词再搜一次…" autocomplete="off">
+        <button type="button" id="resultSearchBtn" class="btn-search">检索</button>
       </div>
     </div>
 
-    <div class="search-box">
-      <input id="q" type="text" placeholder="片名 / 歌手 / 关键词" autocomplete="off" autocorrect="off" spellcheck="false">
-      <button id="goBtn" class="btn-primary" type="button">搜索</button>
-    </div>
-
-    <div class="side-label">内容分类</div>
-    <div id="tabs">
-      <button class="tab is-active" data-cat="video" type="button">
-        <span class="tab-name">影视</span><span class="tab-count" id="cntVideo">—</span>
-      </button>
-      <button class="tab" data-cat="music" type="button">
-        <span class="tab-name">音乐</span><span class="tab-count" id="cntMusic">—</span>
-      </button>
-      <button class="tab" data-cat="bilibili" type="button">
-        <span class="tab-name">B站视频</span><span class="tab-count" id="cntBili">—</span>
-      </button>
-    </div>
-
-    <div class="side-label">快捷搜索</div>
-    <div id="quick" class="quick-list"></div>
-
-    <div class="side-bottom">
-      <div class="side-row">
-        <button id="homeBtn" class="side-btn" type="button">回首页</button>
-        <button id="settingBtn" class="side-btn" type="button">服务设置</button>
+    <div class="results-head">
+      <div class="results-head-main">
+        <h2 class="results-title" id="resultTitle">检索结果</h2>
+        <div class="summary" id="resultsSummary" hidden></div>
       </div>
-      <div id="netState" class="net-state"><i></i><span>正在连接服务…</span></div>
+      <button type="button" class="btn-back" id="backBtn">&#8592; 返回首页</button>
     </div>
-  </aside>
 
-  <!-- 右侧主内容区 -->
-  <main id="main">
-    <header id="topbar">
-      <div id="pageTitle" class="page-title">找点想看的、想听的</div>
-      <div id="pageMeta" class="page-meta">输入关键词，或点左侧快捷搜索</div>
-    </header>
-
-    <div id="content">
-      <section id="welcome" class="welcome">
-        <h1>一个入口，搜遍影视 / 音乐 / B站</h1>
-        <p>1. 点左侧「快捷搜索」直接出结果，或在上方输入关键词</p>
-        <p>2. 用左侧分类切换影视、音乐、B站视频，三类结果平级展示</p>
-        <p>3. 点开结果选平台；B站视频可直接内嵌播放，支持一键全屏</p>
-        <div class="safety">行车安全提示：视频内容请驻车后观看，车机系统通常会在行驶中限制视频播放。</div>
-      </section>
-
-      <section id="loading" class="state-box" hidden>
-        <div class="spinner"></div>
-        <div>正在检索，车机网络较慢时请稍等…</div>
-      </section>
-
-      <section id="errorBox" class="state-box" hidden>
-        <div class="big">&#9888;</div>
-        <div id="errorMsg">网络连接失败</div>
-        <button id="retryBtn" type="button">重试</button>
-      </section>
-
-      <section id="emptyBox" class="state-box" hidden>
-        <div class="big">&#9675;</div>
-        <div id="emptyMsg">这一类暂无结果，试试左侧其他分类</div>
-      </section>
-
-      <div id="grid" class="grid" hidden></div>
-    </div>
-  </main>
-</div>
-
-<!-- B站内嵌播放器：与网页版一样使用 player.bilibili.com 官方播放器 -->
-<div id="playerLayer" class="player-layer" hidden>
-  <div id="playerBar" class="player-bar">
-    <div class="player-titles">
-      <div id="playerTitle" class="player-title">—</div>
-      <div id="playerMeta" class="player-meta"></div>
-    </div>
-    <div class="player-ctrl">
-      <button id="fullBtn" class="pbtn is-main" type="button">&#9974; 全屏播放</button>
-      <button id="playerOpenBtn" class="pbtn" type="button">在 B站打开</button>
-      <button id="playerCopyBtn" class="pbtn" type="button">复制链接</button>
-      <button id="playerCloseBtn" class="pbtn is-close" type="button">&#10005; 关闭</button>
-    </div>
-  </div>
-  <div id="playerBox" class="player-box">
-    <div id="playerHint" class="player-hint">播放器加载中…</div>
-  </div>
-</div>
-
-<!-- 结果详情 / 平台选择大面板 -->
-<div id="sheet" class="sheet" hidden>
-  <div class="sheet-card">
-    <div class="sheet-head">
-      <div id="sheetPoster" class="sheet-poster"></div>
-      <div class="sheet-info">
-        <div id="sheetTitle" class="sheet-title"></div>
-        <div id="sheetMeta" class="sheet-meta"></div>
-        <div id="sheetNote" class="sheet-note"></div>
+    <div class="skeleton" id="skeleton" hidden>
+      <div class="skeleton-status">
+        <span class="skeleton-spinner" aria-hidden="true"></span>
+        <span id="skeletonText">正在同时检索影视、音乐与 B站视频…</span>
       </div>
+      <div class="skeleton-stage">
+        <div class="sk sk-player"></div>
+        <div class="sk-list">
+          <div class="sk sk-item"></div><div class="sk sk-item"></div><div class="sk sk-item"></div>
+        </div>
+      </div>
+      <div class="sk sk-card"></div>
     </div>
-    <div id="sheetActions" class="sheet-actions"></div>
-    <button id="sheetClose" class="sheet-close" type="button">取消</button>
-  </div>
+
+    <div class="error-state" id="errorBox" hidden role="alert">
+      <div class="error-icon" aria-hidden="true">!</div>
+      <h3>检索没成功</h3>
+      <p id="errorMsg">网络好像不太顺畅，请稍后再试。</p>
+      <button type="button" class="btn-search btn-retry" id="retryBtn">重新检索</button>
+    </div>
+
+    <div id="resultContent" hidden>
+      <!-- B站：播放器 + 右侧列表（与网页版一致） -->
+      <section class="block" id="biliBlock" hidden>
+        <div class="block-title">
+          <h3>B站视频</h3>
+          <span class="block-hint" id="biliCount"></span>
+        </div>
+        <div class="bili-stage">
+          <div class="bili-player" id="biliPlayer">
+            <div class="video-wrap" id="videoWrap">
+              <div class="video-placeholder" id="videoPlaceholder" hidden>
+                <span class="video-ph-icon" aria-hidden="true">&#9654;</span>
+                <p>点击右侧列表，选择要播放的视频</p>
+              </div>
+            </div>
+            <div class="bili-info">
+              <div class="bili-title" id="biliTitle">—</div>
+              <div class="bili-meta" id="biliMeta">从右侧列表挑一条开始看</div>
+              <div class="bili-actions">
+                <button type="button" class="btn-play" id="fullBtn">&#9974; 全屏播放</button>
+                <button type="button" class="pill-btn" id="biliOpenBtn" hidden>在 B站打开</button>
+              </div>
+            </div>
+          </div>
+          <div class="bili-list" id="biliList" role="listbox" aria-label="B站视频列表"></div>
+        </div>
+      </section>
+
+      <section class="block" id="videoBlock" hidden>
+        <div class="block-title"><h3>影视</h3><span class="block-hint" id="videoCount"></span></div>
+        <div class="results-list" id="videoList"></div>
+      </section>
+
+      <section class="block" id="musicBlock" hidden>
+        <div class="block-title"><h3>音乐</h3><span class="block-hint" id="musicCount"></span></div>
+        <div class="results-list" id="musicList"></div>
+      </section>
+
+      <div class="empty-tip" id="emptyTip" hidden>未找到相关结果，换个关键词试试</div>
+    </div>
+  </section>
+
+  <footer class="footer">映集 · 聚合公开检索结果，内容版权归各平台所有</footer>
 </div>
 
-<!-- 服务地址设置 -->
-<div id="settingSheet" class="sheet" hidden>
+<!-- 服务设置 -->
+<div class="sheet" id="settingSheet" hidden>
   <div class="sheet-card">
     <div class="sheet-title">服务设置</div>
-    <div class="sheet-meta">数据来自你原有的后端。更换服务器后在这里改地址，保存后重新搜索即可。</div>
+    <div class="sheet-meta">数据来自你原有的后端。换服务器后在这里改地址，保存后重新检索即可。</div>
     <div class="setting-row"><span>当前服务</span><b id="apiNow"></b></div>
-    <input id="apiInput" class="setting-input" type="text" placeholder="https://你的服务地址" spellcheck="false">
-    <div class="sheet-actions">
-      <button id="apiSave" class="sheet-act is-main" type="button">保存</button>
-      <button id="apiReset" class="sheet-act" type="button">恢复默认</button>
-      <button id="apiCancel" class="sheet-act" type="button">取消</button>
+    <input type="text" class="setting-input" id="apiInput" placeholder="https://你的服务地址" spellcheck="false">
+    <div class="setting-actions">
+      <button type="button" class="btn-search" id="apiSave">保存</button>
+      <button type="button" class="pill-btn" id="apiReset">恢复默认</button>
+      <button type="button" class="pill-btn" id="apiCancel">取消</button>
     </div>
   </div>
 </div>
 
-<div id="toast" class="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="config.js"></script>
 <script src="app.js"></script>

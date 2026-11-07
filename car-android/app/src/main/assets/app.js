@@ -1,9 +1,10 @@
 /* ============================================================
-   映集车机版 · 交互逻辑
-   - 数据契约沿用原后端 /api/search：{ video, music, bilibili }
-   - 三类结果平级，不做任何「优先」排序或特殊规则
+   映集 · 车机版交互
+   - 布局与网页版同构：首页 hero → 结果页分区（B站 / 影视 / 音乐）
+   - 数据契约沿用后端 /api/search：{ video, music, bilibili }
+   - B站沿用官方 player.bilibili.com 内嵌播放，另加全屏按键
+   - 三类结果平级，不做音乐优先
    - 严格 ES5 + XHR，兼容车机老 WebView 内核
-   - 不在 Android 里打开时（浏览器预览）自动降级
    ========================================================== */
 (function () {
   "use strict";
@@ -24,16 +25,15 @@
   }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
   function trim(s) { return String(s == null ? "" : s).replace(/^\s+|\s+$/g, ""); }
+  function isArray(a) { return Object.prototype.toString.call(a) === "[object Array]"; }
   function safeUrl(u) {
     if (typeof u !== "string") return "";
     var s = trim(u);
     return /^https?:\/\//i.test(s) ? s : "";
   }
-  function isArray(a) { return Object.prototype.toString.call(a) === "[object Array]"; }
   function nativeReady() {
     return !!(window.YingjiCar && typeof window.YingjiCar.open === "function");
   }
-  function catName(c) { return c === "video" ? "影视" : c === "music" ? "音乐" : "B站视频"; }
   function fmtNum(n) {
     if (!n) return "";
     if (n >= 100000000) return (n / 100000000).toFixed(1) + "亿";
@@ -44,16 +44,17 @@
     var m = { douban: "豆瓣", qq: "QQ音乐", netease: "网易云", tmdb: "TMDB", mock: "演示", bilibili: "B站" };
     return m[s] || "检索";
   }
+  function sourceBadgeText(s) {
+    var m = { douban: "数据来自豆瓣", qq: "数据来自 QQ音乐", netease: "数据来自网易云", mock: "演示数据", mixed: "多源聚合" };
+    return m[s] || "多源聚合";
+  }
 
   var toastTimer = null;
   function toast(msg) {
-    if (nativeReady() && window.YingjiCar.toast) {
-      window.YingjiCar.toast(msg);
-      return;
-    }
+    if (nativeReady() && window.YingjiCar.toast) { window.YingjiCar.toast(msg); return; }
     var t = $("toast");
     t.textContent = msg;
-    t.className = "toast is-on";
+    t.className = "toast is-visible";
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { t.className = "toast"; }, 2200);
   }
@@ -64,7 +65,6 @@
     if (nativeReady()) window.YingjiCar.open(s);
     else window.open(s, "_blank");
   }
-
   function copyUrl(u) {
     var s = safeUrl(u);
     if (!s) { toast("链接不可用"); return; }
@@ -83,9 +83,7 @@
       document.execCommand("copy");
       document.body.removeChild(ta);
       toast("链接已复制");
-    } catch (e) {
-      toast("复制失败：" + s);
-    }
+    } catch (e) { toast("复制失败：" + s); }
   }
 
   /* ---------- 服务地址 ---------- */
@@ -105,31 +103,33 @@
 
   /* ---------- 状态 ---------- */
   var store = { video: [], music: [], bilibili: [] };
-  var current = "video";
-  var lastQuery = "";
-  var hasResult = false;
-  var loading = false;
-  var req = null;
+  var biliPlaylist = [], biliIndex = -1, isFull = false, loadTimer = null;
+  var hasResult = false, loading = false, req = null, lastQuery = "";
 
   function setNet(state, text) {
     var n = $("netState");
+    if (!n) return;
     n.className = "net-state" + (state === true ? " is-on" : state === false ? " is-off" : "");
-    var span = n.getElementsByTagName("span")[0];
-    if (span) span.textContent = text;
+    var t = $("netText");
+    if (t) t.textContent = text;
   }
-  function setTop(title, meta) {
-    $("pageTitle").textContent = title;
-    $("pageMeta").textContent = meta;
+  function setButtonsDisabled(d) {
+    $("goBtn").disabled = d;
+    $("resultSearchBtn").disabled = d;
   }
-  function setState(s) {
-    $("welcome").hidden = s !== "welcome";
-    $("loading").hidden = s !== "loading";
-    $("errorBox").hidden = s !== "error";
-    $("emptyBox").hidden = s !== "empty";
-    $("grid").hidden = s !== "grid";
+  function showHero() {
+    $("heroSection").hidden = false;
+    $("resultsSection").hidden = true;
+    $("topNav").hidden = true;
+    window.scrollTo(0, 0);
+  }
+  function showResults() {
+    $("heroSection").hidden = true;
+    $("resultsSection").hidden = false;
+    window.scrollTo(0, 0);
   }
 
-  /* ---------- 快捷搜索（最近记录优先，热词兜底） ---------- */
+  /* ---------- 快捷搜索（最近记录 + 热词） ---------- */
   function getHistory() {
     try {
       var v = JSON.parse(localStorage.getItem(HIS_KEY));
@@ -143,12 +143,16 @@
   }
   function pushHistory(kw) {
     var list = [kw], old = getHistory(), i;
-    for (i = 0; i < old.length; i++) if (old[i] !== kw && list.length < 8) list.push(old[i]);
+    for (i = 0; i < old.length; i++) {
+      if (old[i] !== kw && list.length < 8) list.push(old[i]);
+    }
     try { localStorage.setItem(HIS_KEY, JSON.stringify(list)); } catch (e) {}
     renderQuick();
   }
   function renderQuick() {
-    var box = $("quick"), frag = document.createDocumentFragment();
+    var box = $("quick");
+    if (!box) return;
+    clear(box);
     var seen = {}, all = [], i;
     function add(w) { if (w && !seen[w]) { seen[w] = 1; all.push(w); } }
     var his = getHistory(), hot = cfg.hotWords || [];
@@ -156,170 +160,104 @@
     for (i = 0; i < hot.length; i++) add(hot[i]);
     for (i = 0; i < all.length && i < 8; i++) {
       (function (w) {
-        var b = el("button", "quick", w);
+        var b = el("button", "hot-tag", w);
         b.type = "button";
         b.onclick = function () { doSearch(w); };
-        frag.appendChild(b);
+        box.appendChild(b);
       })(all[i]);
     }
-    clear(box);
-    box.appendChild(frag);
   }
 
-  /* ---------- 结果渲染 ---------- */
-  function subText(item, cat) {
-    if (cat === "music") {
-      return (item.artist || "") + (item.year ? " · " + item.year : "") +
-        (item.overview ? " · " + item.overview : "");
-    }
-    if (cat === "bilibili") {
-      return (item.author || "") + (item.duration ? " · " + item.duration : "") +
-        (item.play ? " · " + fmtNum(item.play) + "播放" : "");
-    }
-    return (item.year ? item.year : "") +
-      (item.rating ? " · 豆瓣 " + item.rating : "") +
-      (item.overview ? " · " + item.overview : "");
-  }
-  function fillPoster(box, item) {
-    clear(box);
-    box.appendChild(document.createTextNode((item.name || "?").slice(0, 1)));
+  /* ---------- 通用渲染 ---------- */
+  function makePoster(item, cls) {
+    var box = el("div", cls);
+    box.appendChild(document.createTextNode(String(item.name || "?").slice(0, 1)));
     var u = safeUrl(item.poster);
-    if (!u) return;
+    if (!u) { box.className = cls + " is-fallback"; return box; }
     var img = document.createElement("img");
     img.alt = "";
-    img.onerror = function () { img.className = "is-broken"; };
+    img.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;";
+    img.onerror = function () { img.className = "is-broken"; box.className = cls + " is-fallback"; };
     img.src = u;
     box.appendChild(img);
+    return box;
   }
-  function renderCounts() {
-    $("cntVideo").textContent = hasResult ? String(store.video.length) : "—";
-    $("cntMusic").textContent = hasResult ? String(store.music.length) : "—";
-    $("cntBili").textContent = hasResult ? String(store.bilibili.length) : "—";
+
+  function addPlatform(box, name, url, primary) {
+    var u = safeUrl(url);
+    if (!u) return;
+    var b = el("button", "platform-link" + (primary ? " primary" : ""), name);
+    b.type = "button";
+    b.onclick = function () { openUrl(u); };
+    box.appendChild(b);
   }
-  function setTab(cat) {
-    current = cat;
-    var tabs = $("tabs").getElementsByTagName("button"), i;
-    for (i = 0; i < tabs.length; i++) {
-      tabs[i].className = tabs[i].getAttribute("data-cat") === cat ? "tab is-active" : "tab";
+
+  function buildCard(item) {
+    var card = el("div", "result-card");
+    card.appendChild(makePoster(item, "result-poster"));
+
+    var info = el("div", "result-info");
+    info.appendChild(el("div", "result-name", item.name || "未命名"));
+
+    var meta = el("div", "result-meta");
+    if (item.type) meta.appendChild(el("span", "", String(item.type)));
+    if (item.year) meta.appendChild(el("span", "", String(item.year)));
+    if (item.artist) meta.appendChild(el("span", "", String(item.artist)));
+    if (item.rating) meta.appendChild(el("span", "result-rating", "豆瓣 " + item.rating));
+    if (item.overview) meta.appendChild(el("span", "", String(item.overview)));
+    if (item.source) meta.appendChild(el("span", "result-source-tag", sourceName(item.source)));
+    info.appendChild(meta);
+    card.appendChild(info);
+
+    var ps = isArray(item.platforms) ? item.platforms : [];
+    var mainUrl = safeUrl(item.url);
+    var wrap = el("div", "result-platforms");
+    var used = {}, i;
+    if (mainUrl) {
+      used[mainUrl] = 1;
+      addPlatform(wrap, /music|y\.qq/i.test(mainUrl) ? "试听 ›" : "查看详情 ›", mainUrl, true);
     }
-    renderGrid();
-  }
-  function renderGrid() {
-    var list = store[current] || [];
-    var cat = current;
-    var grid = $("grid"), frag = document.createDocumentFragment(), i;
-    if (!list.length) {
-      $("emptyMsg").textContent = "「" + lastQuery + "」在" + catName(cat) + "里暂无结果，点左侧切换其他分类";
-      setState("empty");
-      return;
+    for (i = 0; i < ps.length && i < 6; i++) {
+      var pu = safeUrl(ps[i] && ps[i].url);
+      if (!pu || used[pu]) continue;
+      used[pu] = 1;
+      addPlatform(wrap, String((ps[i] && ps[i].name) || "打开"), pu, false);
     }
-    for (i = 0; i < list.length; i++) {
-      (function (item) {
-        var card = el("div", "card");
-        var inner = el("div", "card-inner");
-        var p = el("div", "poster");
-        fillPoster(p, item);
-        inner.appendChild(p);
-        var body = el("div", "card-body");
-        body.appendChild(el("div", "card-title", item.name || "未命名"));
-        body.appendChild(el("div", "card-sub", subText(item, cat) || "—"));
-        body.appendChild(el("div", "card-tag", sourceName(cat === "bilibili" ? "bilibili" : item.source)));
-        inner.appendChild(body);
-        card.appendChild(inner);
-        card.onclick = function () { openSheet(item, cat); };
-        frag.appendChild(card);
-      })(list[i]);
+    if (wrap.children.length) card.appendChild(wrap);
+    return card;
+  }
+
+  function renderList(container, list) {
+    clear(container);
+    var frag = document.createDocumentFragment(), i;
+    for (i = 0; i < list.length; i++) frag.appendChild(buildCard(list[i]));
+    container.appendChild(frag);
+  }
+
+  function renderSummary(data, fromCache) {
+    var box = $("resultsSummary");
+    clear(box);
+    box.appendChild(el("span", "summary-source", sourceBadgeText(data.source)));
+    if (store.bilibili.length) box.appendChild(el("span", "", "B站 " + store.bilibili.length + " 条"));
+    if (store.video.length) box.appendChild(el("span", "", "影视 " + store.video.length + " 部"));
+    if (store.music.length) box.appendChild(el("span", "", "音乐 " + store.music.length + " 首"));
+    if (typeof data.elapsed === "number") {
+      box.appendChild(el("span", "", "耗时 " + (data.elapsed / 1000).toFixed(1) + "s"));
     }
-    clear(grid);
-    grid.appendChild(frag);
-    setState("grid");
-    $("content").scrollTop = 0;
+    if (fromCache) box.appendChild(el("span", "", "缓存命中"));
+    box.hidden = false;
   }
 
-  /* ---------- 检索 ---------- */
-  function startLoad() {
-    loading = true;
-    setState("loading");
-    setTop("正在检索「" + lastQuery + "」…", "影视 / 音乐 / B站 三路并发，请稍等");
-    setNet(null, "正在请求数据…");
-  }
-  function fail(msg) {
-    $("errorMsg").textContent = msg;
-    setNet(false, "服务未连接（点服务设置检查）");
-    setState("error");
-    setTop("检索没成功", "可点「重试」，或检查左下角服务状态与地址");
-  }
-  function doSearch(kw) {
-    var q = trim(kw);
-    if (!q) { toast("请输入关键词"); return; }
-    if (loading) return;
-    lastQuery = q;
-    $("q").value = q;
-    pushHistory(q);
-    startLoad();
-
-    var x = new XMLHttpRequest();
-    req = x;
-    x.open("GET", getApi() + "/api/search?q=" + encodeURIComponent(q), true);
-    x.timeout = TIMEOUT;
-    x.onload = function () {
-      loading = false;
-      if (x.status < 200 || x.status >= 300) {
-        fail("服务返回 " + x.status + "，请稍后重试");
-        return;
-      }
-      var res;
-      try { res = JSON.parse(x.responseText); }
-      catch (e) { fail("数据解析失败，请检查服务地址"); return; }
-      store.video = isArray(res.video) ? res.video : [];
-      store.music = isArray(res.music) ? res.music : [];
-      store.bilibili = isArray(res.bilibili) ? res.bilibili : [];
-      hasResult = true;
-      renderCounts();
-      setTop("「" + q + "」的检索结果",
-        "影视 " + store.video.length + " · 音乐 " + store.music.length +
-        " · B站 " + store.bilibili.length + " · " +
-        (res.cached ? "缓存命中" : "耗时 " + (res.elapsed || 0) + "ms"));
-      setNet(true, "服务在线");
-      setTab(current);
-    };
-    x.onerror = function () { loading = false; fail("网络连接失败，请检查车机网络或服务地址"); };
-    x.ontimeout = function () { loading = false; fail("请求超时，车机网络可能较慢，点重试再试一次"); };
-    x.onabort = function () { loading = false; };
-    x.send();
-  }
-  function goHome() {
-    if (req) { try { req.abort(); } catch (e) {} }
-    if (!$("playerLayer").hidden || isFull) closePlayer(); // 停掉后台播放，避免继续出声
-    loading = false;
-    hasResult = false;
-    store = { video: [], music: [], bilibili: [] };
-    $("q").value = "";
-    renderCounts();
-    renderQuick();
-    setState("welcome");
-    setTop("找点想看的、想听的", "输入关键词，或点左侧快捷搜索");
-  }
-  function checkStatus() {
-    setNet(null, "正在连接服务…");
-    var x = new XMLHttpRequest();
-    x.open("GET", getApi() + "/api/status", true);
-    x.timeout = 12000;
-    x.onload = function () {
-      if (x.status >= 200 && x.status < 300) setNet(true, "服务在线");
-      else setNet(false, "服务异常 " + x.status);
-    };
-    x.onerror = function () { setNet(false, "服务未连接（点服务设置检查）"); };
-    x.ontimeout = function () { setNet(false, "服务响应慢 / 超时"); };
-    x.send();
+  function updateNav() {
+    var map = { bili: !!store.bilibili.length, video: !!store.video.length, music: !!store.music.length };
+    var links = $("topNav").getElementsByTagName("a"), i;
+    for (i = 0; i < links.length; i++) {
+      links[i].hidden = !map[links[i].getAttribute("data-nav")];
+    }
+    $("topNav").hidden = !(map.bili || map.video || map.music);
   }
 
-  /* ---------- B站内嵌播放器 ----------
-     与网页版一致：使用 B站官方 player.bilibili.com iframe，不改后端数据契约。
-     全屏采用「CSS 铺满 + 原生 requestFullscreen 双保险」，
-     老车机内核不支持 Fullscreen API 时，CSS 全屏依然可用。 */
-  var playerItem = null, playerIframe = null, isFull = false, loadTimer = null;
-
+  /* ---------- B站内嵌播放器（与网页版一致 + 全屏键） ---------- */
   function playerBvid(item) {
     var s = String((item && item.url) || "") + " " + String((item && item.embed) || "");
     var m = /BV[0-9A-Za-z]{10,12}/.exec(s);
@@ -327,7 +265,6 @@
   }
   function playerEmbed(item) {
     var raw = safeUrl(item && item.embed);
-    // 只信任 B站官方播放器地址，其余一律自己按 bvid 构造，避免外部字段注入
     if (raw && /^https:\/\/player\.bilibili\.com\/player\.html\?/i.test(raw)) {
       return raw.replace(/([?&])autoplay=1/, "$1autoplay=0");
     }
@@ -336,43 +273,76 @@
   }
   function dropIframe() {
     clearTimeout(loadTimer);
-    if (playerIframe && playerIframe.parentNode) playerIframe.parentNode.removeChild(playerIframe);
-    playerIframe = null;
+    var wrap = $("videoWrap");
+    var old = wrap.getElementsByTagName("iframe");
+    while (old.length) wrap.removeChild(old[0]);
   }
-  function openPlayer(item) {
-    var src = playerEmbed(item);
-    if (!src) { toast("这条视频没有可用的内嵌播放地址"); return false; }
-    closeSheet();
+  function clearPlayer() {
+    if (isFull) exitFull();
     dropIframe();
-    playerItem = item;
-    $("playerTitle").textContent = item.name || "B站视频";
-    $("playerMeta").textContent = subText(item, "bilibili") || "";
-    $("playerHint").textContent = "播放器加载中…";
-    $("playerHint").hidden = false;
+    $("videoPlaceholder").hidden = false;
+    $("biliTitle").textContent = "—";
+    $("biliMeta").textContent = "从右侧列表挑一条开始看";
+    $("biliOpenBtn").hidden = true;
+    biliIndex = -1;
+  }
+  function selectBili(index) {
+    var v = biliPlaylist[index];
+    if (!v) return;
+    biliIndex = index;
+    dropIframe();
+    $("videoPlaceholder").hidden = false;
+    $("biliTitle").textContent = v.name || "—";
 
+    var parts = [];
+    if (v.author) parts.push("UP主：" + v.author);
+    if (v.duration) parts.push(v.duration);
+    if (v.play) parts.push(fmtNum(v.play) + " 播放");
+    $("biliMeta").textContent = parts.join(" · ") || "—";
+
+    var openUrlStr = safeUrl(v.url);
+    $("biliOpenBtn").hidden = !openUrlStr;
+    if (openUrlStr) $("biliOpenBtn").onclick = function () { openUrl(openUrlStr); };
+
+    var items = $("biliList").children, i;
+    for (i = 0; i < items.length; i++) {
+      items[i].className = "bili-item" + (i === index ? " is-active" : "");
+    }
+  }
+  function playBili(index) {
+    var v = biliPlaylist[index];
+    if (!v) return;
+    var src = playerEmbed(v);
+    if (!src) { toast("这条视频没有可用的内嵌播放地址"); return; }
+    selectBili(index);
+
+    var wrap = $("videoWrap");
     var f = document.createElement("iframe");
-    f.title = (item.name || "B站视频") + " · 哔哩哔哩播放器";
+    f.title = (v.name || "B站视频") + " · 哔哩哔哩播放器";
     f.setAttribute("allowfullscreen", "true");
     f.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
     f.setAttribute("scrolling", "no");
-    f.onload = function () { if (playerIframe === f) $("playerHint").hidden = true; };
+    f.onload = function () { $("videoPlaceholder").hidden = true; };
     f.src = src;
-    $("playerBox").appendChild(f);
-    playerIframe = f;
-    $("playerLayer").hidden = false;
+    wrap.appendChild(f);
+    $("videoPlaceholder").hidden = false;
+    var p = $("videoPlaceholder").getElementsByTagName("p")[0];
+    if (p) p.textContent = "播放器加载中…";
+
     loadTimer = setTimeout(function () {
-      if (playerIframe === f && !$("playerHint").hidden) {
-        $("playerHint").textContent = "播放器加载较慢，可点「在 B站打开」，或检查车机网络";
+      if (!$("videoPlaceholder").hidden) {
+        if (p) p.textContent = "加载较慢，可点「在 B站打开」，或检查车机网络";
       }
-    }, 10000);
-    return true;
+    }, 12000);
   }
+
   function enterFull() {
+    if (!$("videoWrap").getElementsByTagName("iframe").length) { toast("先点右侧一条视频，再全屏"); return; }
     isFull = true;
-    $("playerLayer").className = "player-layer is-full";
+    $("biliPlayer").className = "bili-player is-fullscreen";
     $("fullBtn").textContent = "⛶ 退出全屏";
     try {
-      var n = $("playerLayer");
+      var n = $("biliPlayer");
       if (n.requestFullscreen) n.requestFullscreen();
       else if (n.webkitRequestFullscreen) n.webkitRequestFullscreen();
       else if (n.webkitRequestFullScreen) n.webkitRequestFullScreen();
@@ -381,7 +351,7 @@
   }
   function exitFull() {
     isFull = false;
-    $("playerLayer").className = "player-layer";
+    $("biliPlayer").className = "bili-player";
     $("fullBtn").textContent = "⛶ 全屏播放";
     try {
       if (document.exitFullscreen) document.exitFullscreen();
@@ -391,63 +361,147 @@
     if (nativeReady() && window.YingjiCar.fullscreen) window.YingjiCar.fullscreen(false);
   }
   function toggleFull() { if (isFull) exitFull(); else enterFull(); }
-  function closePlayer() {
-    if (isFull) exitFull();
-    dropIframe();
-    $("playerLayer").hidden = true;
-    playerItem = null;
-  }
 
-  /* ---------- 大按钮操作面板 ---------- */
-  function addAct(box, label, url, main, kind, payload) {
-    if (!safeUrl(url)) return;
-    var b = el("button", "sheet-act" + (main ? " is-main" : ""), label);
-    b.type = "button";
-    b.onclick = function () {
-      if (kind === "copy") copyUrl(url);
-      else if (kind === "play" || kind === "playfull") {
-        if (openPlayer(payload) && kind === "playfull") enterFull();
-      } else openUrl(url);
-      closeSheet();
-    };
-    box.appendChild(b);
-  }
-  function openSheet(item, cat) {
-    fillPoster($("sheetPoster"), item);
-    $("sheetTitle").textContent = item.name || "未命名";
-    $("sheetMeta").textContent = subText(item, cat) || "";
-    $("sheetNote").textContent = cat === "bilibili"
-      ? "沿用网页版的 B站内嵌播放器，点「内嵌播放」即可在 App 内观看，可一键全屏；视频请驻车后观看。"
-      : cat === "music"
-        ? "歌曲将在 QQ音乐 / 网易云或浏览器中打开。"
-        : "可打开豆瓣词条，或直接去各视频平台搜索观看。";
+  function renderBili() {
+    var list = $("biliList");
+    clear(list);
+    biliPlaylist = store.bilibili;
+    $("biliCount").textContent = store.bilibili.length ? "共 " + store.bilibili.length + " 条 · 点击右侧列表播放" : "";
+    if (!store.bilibili.length) { clearPlayer(); return; }
 
-    var box = $("sheetActions");
-    clear(box);
-    var mainUrl = safeUrl(item.url);
-    if (cat === "bilibili") {
-      var playUrl = playerEmbed(item) || mainUrl;
-      addAct(box, "▶ 内嵌播放", playUrl, true, "play", item);
-      addAct(box, "⛶ 全屏播放", playUrl, false, "playfull", item);
-      addAct(box, "在 B站打开", mainUrl, false, "open");
-      addAct(box, "复制链接", mainUrl, false, "copy");
-    } else {
-      addAct(box, cat === "music" ? "打开歌曲页" : "打开豆瓣词条", mainUrl, true, "open");
-      var ps = isArray(item.platforms) ? item.platforms : [];
-      var used = {}, i;
-      used[mainUrl] = 1;
-      for (i = 0; i < ps.length; i++) {
-        var pu = safeUrl(ps[i] && ps[i].url);
-        if (!pu || used[pu]) continue;
-        used[pu] = 1;
-        addAct(box, "去" + (ps[i].name || "平台"), pu, false, "open");
-      }
-      addAct(box, "复制链接", mainUrl, false, "copy");
+    var frag = document.createDocumentFragment(), i;
+    for (i = 0; i < store.bilibili.length; i++) {
+      (function (v, idx) {
+        var item = el("div", "bili-item");
+        item.setAttribute("role", "option");
+        item.appendChild(makePoster(v, "bili-item-thumb"));
+        var info = el("div", "bili-item-info");
+        info.appendChild(el("div", "bili-item-title", v.name || "未命名视频"));
+        var meta = el("div", "bili-item-meta");
+        if (v.author) meta.appendChild(el("span", "", v.author));
+        if (v.duration) meta.appendChild(el("span", "", v.duration));
+        if (v.play) meta.appendChild(el("span", "", fmtNum(v.play) + " 播放"));
+        info.appendChild(meta);
+        item.appendChild(info);
+        item.onclick = function () { playBili(idx); };
+        frag.appendChild(item);
+      })(store.bilibili[i], i);
     }
-    $("sheet").hidden = false;
-  }
-  function closeSheet() { $("sheet").hidden = true; }
+    list.appendChild(frag);
 
+    // 驻车场景：默认只选中第一条，不自动加载视频流，点列表才播放
+    selectBili(0);
+  }
+
+  /* ---------- 检索 ---------- */
+  function setLoading(kw) {
+    $("skeleton").hidden = false;
+    $("errorBox").hidden = true;
+    $("resultContent").hidden = true;
+    $("resultsSummary").hidden = true;
+    $("topNav").hidden = true;
+    $("resultTitle").textContent = "「" + kw + "」检索中…";
+    $("skeletonText").textContent = "正在同时检索影视、音乐与 B站视频…";
+    setButtonsDisabled(true);
+  }
+  function fail(msg) {
+    $("skeleton").hidden = true;
+    $("resultContent").hidden = true;
+    $("resultsSummary").hidden = true;
+    $("topNav").hidden = true;
+    $("errorBox").hidden = false;
+    $("errorMsg").textContent = msg;
+    $("resultTitle").textContent = "检索没成功";
+    setButtonsDisabled(false);
+    setNet(false, "服务未连接");
+  }
+
+  function renderAll(data, fromCache) {
+    $("skeleton").hidden = true;
+    $("errorBox").hidden = true;
+    $("resultContent").hidden = false;
+    setButtonsDisabled(false);
+
+    $("videoCount").textContent = store.video.length ? "共 " + store.video.length + " 部" : "";
+    $("musicCount").textContent = store.music.length ? "共 " + store.music.length + " 首" : "";
+    $("biliBlock").hidden = !store.bilibili.length;
+    $("videoBlock").hidden = !store.video.length;
+    $("musicBlock").hidden = !store.music.length;
+    $("emptyTip").hidden = !!(store.bilibili.length || store.video.length || store.music.length);
+
+    renderBili();
+    renderList($("videoList"), store.video);
+    renderList($("musicList"), store.music);
+    renderSummary(data, fromCache);
+    updateNav();
+  }
+
+  function doSearch(kw) {
+    var q = trim(kw);
+    if (!q) { toast("请输入关键词"); return; }
+    if (loading) return;
+    lastQuery = q;
+    $("q").value = q;
+    $("resultInput").value = q;
+    pushHistory(q);
+    showResults();
+    setLoading(q);
+    loading = true;
+    setNet(null, "正在请求数据…");
+
+    var x = new XMLHttpRequest();
+    req = x;
+    x.open("GET", getApi() + "/api/search?q=" + encodeURIComponent(q), true);
+    x.timeout = TIMEOUT;
+    x.onload = function () {
+      loading = false;
+      if (x.status < 200 || x.status >= 300) { fail("服务返回 " + x.status + "，请稍后重试"); return; }
+      var res;
+      try { res = JSON.parse(x.responseText); }
+      catch (e) { fail("数据解析失败，请检查服务地址"); return; }
+
+      store.video = isArray(res.video) ? res.video : [];
+      store.music = isArray(res.music) ? res.music : [];
+      store.bilibili = isArray(res.bilibili) ? res.bilibili : [];
+      hasResult = true;
+      setNet(true, "服务在线");
+      $("resultTitle").textContent = "「" + q + "」的检索结果";
+      renderAll(res, !!res.cached);
+    };
+    x.onerror = function () { loading = false; fail("网络连接失败，请检查车机网络或服务地址"); };
+    x.ontimeout = function () { loading = false; fail("请求超时，车机网络可能较慢，点「重新检索」再试一次"); };
+    x.onabort = function () { loading = false; };
+    x.send();
+  }
+
+  function goHome() {
+    if (req) { try { req.abort(); } catch (e) {} }
+    loading = false;
+    hasResult = false;
+    store = { video: [], music: [], bilibili: [] };
+    biliPlaylist = [];
+    clearPlayer();
+    setButtonsDisabled(false);
+    $("q").value = "";
+    $("resultInput").value = "";
+    showHero();
+  }
+
+  function checkStatus() {
+    setNet(null, "连接中…");
+    var x = new XMLHttpRequest();
+    x.open("GET", getApi() + "/api/status", true);
+    x.timeout = 12000;
+    x.onload = function () {
+      if (x.status >= 200 && x.status < 300) setNet(true, "服务在线");
+      else setNet(false, "服务异常 " + x.status);
+    };
+    x.onerror = function () { setNet(false, "服务未连接"); };
+    x.ontimeout = function () { setNet(false, "服务响应慢"); };
+    x.send();
+  }
+
+  /* ---------- 服务设置 ---------- */
   function openSetting() {
     $("apiNow").textContent = getApi();
     $("apiInput").value = getApi();
@@ -455,33 +509,30 @@
   }
   function closeSetting() { $("settingSheet").hidden = true; }
 
-  /* ---------- 返回键（由原生 onBackPressed 调用） ---------- */
+  /* ---------- 返回键（原生 onBackPressed 调用） ---------- */
   window.__yjBack = function () {
-    if (!$("playerLayer").hidden) {
-      if (isFull) exitFull();      // 全屏 → 先退回窗口
-      else closePlayer();          // 窗口 → 关闭播放器
-      return;
-    }
-    if (!$("sheet").hidden) { closeSheet(); return; }
-    if (!$("settingSheet").hidden) { closeSetting(); return; }
-    if (hasResult) { goHome(); return; }
+    if (isFull) { exitFull(); return; }
+    var sheet = $("settingSheet");
+    if (sheet && !sheet.hidden) { closeSetting(); return; }
+    if (!$("resultsSection").hidden) { goHome(); return; }
     if (nativeReady() && window.YingjiCar.finish) window.YingjiCar.finish();
     else toast("已在首页");
   };
 
-  /* ---------- 事件绑定 ---------- */
+  /* ---------- 事件 ---------- */
   $("goBtn").onclick = function () { doSearch($("q").value); };
   $("q").onkeydown = function (e) {
     if ((e.keyCode || e.which) === 13) doSearch($("q").value);
   };
+  $("resultSearchBtn").onclick = function () { doSearch($("resultInput").value); };
+  $("resultInput").onkeydown = function (e) {
+    if ((e.keyCode || e.which) === 13) doSearch($("resultInput").value);
+  };
   $("retryBtn").onclick = function () { doSearch(lastQuery || $("q").value); };
-  $("homeBtn").onclick = goHome;
+  $("backBtn").onclick = goHome;
+  $("brandLink").onclick = function (e) { if (e && e.preventDefault) e.preventDefault(); goHome(); };
   $("settingBtn").onclick = openSetting;
-  $("sheetClose").onclick = closeSheet;
   $("fullBtn").onclick = toggleFull;
-  $("playerCloseBtn").onclick = closePlayer;
-  $("playerOpenBtn").onclick = function () { if (playerItem) openUrl(playerItem.url); };
-  $("playerCopyBtn").onclick = function () { if (playerItem) copyUrl(playerItem.url); };
   $("apiCancel").onclick = closeSetting;
   $("apiSave").onclick = function () {
     var raw = trim($("apiInput").value);
@@ -497,24 +548,38 @@
     checkStatus();
     toast("已恢复默认服务地址");
   };
-  $("sheet").onclick = function (e) { if (e.target === $("sheet")) closeSheet(); };
-  $("settingSheet").onclick = function (e) { if (e.target === $("settingSheet")) closeSetting(); };
+  $("settingSheet").onclick = function (e) {
+    if (e.target === $("settingSheet")) closeSetting();
+  };
 
-  (function bindTabs() {
-    var tabs = $("tabs").getElementsByTagName("button"), i;
-    for (i = 0; i < tabs.length; i++) {
-      (function (b) {
-        b.onclick = function () {
-          if (!hasResult) { toast("先搜索一个关键词"); return; }
-          setTab(b.getAttribute("data-cat"));
+  (function bindNav() {
+    var links = $("topNav").getElementsByTagName("a"), i;
+    for (i = 0; i < links.length; i++) {
+      (function (a) {
+        a.onclick = function (e) {
+          if (e && e.preventDefault) e.preventDefault();
+          var id = (a.getAttribute("href") || "").replace("#", "");
+          var node = $(id);
+          if (!node || node.hidden) return;
+          var y = node.getBoundingClientRect().top +
+            (window.pageYOffset || document.documentElement.scrollTop || 0) - 190;
+          window.scrollTo(0, y < 0 ? 0 : y);
         };
-      })(tabs[i]);
+      })(links[i]);
     }
   })();
 
   /* ---------- 初始化 ---------- */
   renderQuick();
-  renderCounts();
-  setState("welcome");
+  setNet(null, "连接中…");
   checkStatus();
+
+  (function boot() {
+    var m = /[?&]q=([^&]*)/.exec(window.location.search || "");
+    if (m && m[1]) {
+      try { doSearch(decodeURIComponent(m[1].replace(/\+/g, " "))); return; } catch (e) {}
+    }
+    $("heroSection").hidden = false;
+    $("resultsSection").hidden = true;
+  })();
 })();
