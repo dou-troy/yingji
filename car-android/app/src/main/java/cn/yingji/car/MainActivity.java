@@ -12,8 +12,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -28,13 +30,18 @@ import android.widget.Toast;
  * 设计要点：
  *  1. 界面完全内置在 assets，断网也能打开壳，不依赖线上网页；
  *  2. 数据仍走原有 Railway 后端 /api/*，后端架构一行不改；
- *  3. 所有外链交给系统 Intent（B站 / QQ音乐 / 豆瓣 / 视频平台），
- *     WebView 内不做内嵌播放，避免车机老内核与行驶中视频限制；
- *  4. 只使用 Android 原生 API，无 androidx / 无第三方依赖，降低构建失败率。
+ *  3. B站沿用网页版的内嵌播放（player.bilibili.com 官方 iframe），
+ *     并接管 HTML5 视频的自定义全屏视图，保证「全屏播放」按键在车机上生效；
+ *  4. 其余外链交给系统 Intent（QQ音乐 / 豆瓣 / 视频平台）；
+ *  5. 只使用 Android 原生 API，无 androidx / 无第三方依赖，降低构建失败率。
  */
 public class MainActivity extends Activity {
 
     private WebView web;
+    private WebChromeClient chrome;
+    private View customView;
+    private FrameLayout fullscreenContainer;
+    private WebChromeClient.CustomViewCallback customViewCallback;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -74,7 +81,12 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setTextZoom(100);          // 不跟随系统字体缩放，保证车机排版稳定
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
-        s.setUserAgentString(s.getUserAgentString() + " YingjiCar/1.0");
+        // 桌面 UA：B站官方播放器对移动 WebView 常会提示「去 App 打开」，
+        // 车机是横屏大屏，走 H5 桌面版内嵌播放成功率更高
+        s.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                + "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 YingjiCar/1.0");
+        // 播放由用户点「内嵌播放」触发；放开手势限制，避免 iframe 内点击被老内核吞掉
+        s.setMediaPlaybackRequiresUserGesture(false);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         }
@@ -83,7 +95,9 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                if (url != null && url.startsWith("file:")) return false;
+                if (url == null) return true;
+                // B站官方播放器 iframe 的内部导航留在页面里，别把播放中误触变成跳出 App
+                if (url.startsWith("file:") || isFrameNav(url)) return false;
                 openExternal(url);
                 return true;
             }
@@ -93,6 +107,7 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl() != null ? request.getUrl().toString() : "";
                 if (url.startsWith("file:")) return false;
+                if (!request.isForMainFrame() && isFrameNav(url)) return false;
                 openExternal(url);
                 return true;
             }
@@ -104,7 +119,43 @@ public class MainActivity extends Activity {
                 }
             }
         });
-        web.setWebChromeClient(new WebChromeClient());
+        chrome = new WebChromeClient() {
+            /** HTML5 <video> / B站播放器请求全屏时，把视频视图挂到窗口上 */
+            @Override
+            public void onShowCustomView(View view, WebChromeClient.CustomViewCallback callback) {
+                if (customView != null) {
+                    try { callback.onCustomViewHidden(); } catch (Exception ignored) {}
+                    return;
+                }
+                customView = view;
+                customViewCallback = callback;
+                fullscreenContainer = new FrameLayout(MainActivity.this);
+                fullscreenContainer.setBackgroundColor(0xFF000000);
+                fullscreenContainer.addView(view, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                ViewGroup decor = (ViewGroup) getWindow().getDecorView();
+                decor.addView(fullscreenContainer, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+                web.setVisibility(View.GONE);
+                applyImmersive();
+            }
+
+            @Override
+            public void onHideCustomView() {
+                if (customView == null) return;
+                ViewGroup decor = (ViewGroup) getWindow().getDecorView();
+                try { decor.removeView(fullscreenContainer); } catch (Exception ignored) {}
+                fullscreenContainer = null;
+                customView = null;
+                web.setVisibility(View.VISIBLE);
+                if (customViewCallback != null) {
+                    try { customViewCallback.onCustomViewHidden(); } catch (Exception ignored) {}
+                    customViewCallback = null;
+                }
+                applyImmersive();
+            }
+        };
+        web.setWebChromeClient(chrome);
         web.loadUrl("file:///android_asset/index.html");
     }
 
@@ -142,9 +193,27 @@ public class MainActivity extends Activity {
     /** 返回键先交给页面处理（关面板 / 回首页），首页再按一次才退出 */
     @Override
     public void onBackPressed() {
+        // 原生视频全屏优先退出（此时 WebView 被隐藏，页面收不到返回键）
+        if (customView != null && chrome != null) {
+            chrome.onHideCustomView();
+            return;
+        }
         if (web != null) {
             web.loadUrl("javascript:(function(){if(window.__yjBack){window.__yjBack();}})()");
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (customView != null && chrome != null) chrome.onHideCustomView();
+        if (web != null) web.destroy();
+        super.onDestroy();
+    }
+
+    /** iframe 内部导航（含 B站播放器）留在 WebView 内，不当成外链跳出 */
+    private boolean isFrameNav(String url) {
+        return url.startsWith("https://") || url.startsWith("http://")
+                || url.equals("about:blank") || url.startsWith("about:blank#");
     }
 
     private void openExternal(String url) {
@@ -209,6 +278,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void toast(final String msg) {
             MainActivity.this.toast(msg);
+        }
+
+        /** 网页端进入/退出全屏时，重新压住车机系统栏（Activity 本身已是沉浸式全屏） */
+        @JavascriptInterface
+        public void fullscreen(final boolean on) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    applyImmersive();
+                }
+            });
         }
 
         @JavascriptInterface

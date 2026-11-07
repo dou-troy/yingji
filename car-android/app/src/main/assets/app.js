@@ -290,6 +290,7 @@
   }
   function goHome() {
     if (req) { try { req.abort(); } catch (e) {} }
+    if (!$("playerLayer").hidden || isFull) closePlayer(); // 停掉后台播放，避免继续出声
     loading = false;
     hasResult = false;
     store = { video: [], music: [], bilibili: [] };
@@ -313,14 +314,100 @@
     x.send();
   }
 
+  /* ---------- B站内嵌播放器 ----------
+     与网页版一致：使用 B站官方 player.bilibili.com iframe，不改后端数据契约。
+     全屏采用「CSS 铺满 + 原生 requestFullscreen 双保险」，
+     老车机内核不支持 Fullscreen API 时，CSS 全屏依然可用。 */
+  var playerItem = null, playerIframe = null, isFull = false, loadTimer = null;
+
+  function playerBvid(item) {
+    var s = String((item && item.url) || "") + " " + String((item && item.embed) || "");
+    var m = /BV[0-9A-Za-z]{10,12}/.exec(s);
+    return m ? m[0] : "";
+  }
+  function playerEmbed(item) {
+    var raw = safeUrl(item && item.embed);
+    // 只信任 B站官方播放器地址，其余一律自己按 bvid 构造，避免外部字段注入
+    if (raw && /^https:\/\/player\.bilibili\.com\/player\.html\?/i.test(raw)) {
+      return raw.replace(/([?&])autoplay=1/, "$1autoplay=0");
+    }
+    var id = playerBvid(item);
+    return id ? "https://player.bilibili.com/player.html?bvid=" + id + "&autoplay=0&high_quality=1" : "";
+  }
+  function dropIframe() {
+    clearTimeout(loadTimer);
+    if (playerIframe && playerIframe.parentNode) playerIframe.parentNode.removeChild(playerIframe);
+    playerIframe = null;
+  }
+  function openPlayer(item) {
+    var src = playerEmbed(item);
+    if (!src) { toast("这条视频没有可用的内嵌播放地址"); return false; }
+    closeSheet();
+    dropIframe();
+    playerItem = item;
+    $("playerTitle").textContent = item.name || "B站视频";
+    $("playerMeta").textContent = subText(item, "bilibili") || "";
+    $("playerHint").textContent = "播放器加载中…";
+    $("playerHint").hidden = false;
+
+    var f = document.createElement("iframe");
+    f.title = (item.name || "B站视频") + " · 哔哩哔哩播放器";
+    f.setAttribute("allowfullscreen", "true");
+    f.setAttribute("allow", "autoplay; fullscreen; picture-in-picture");
+    f.setAttribute("scrolling", "no");
+    f.onload = function () { if (playerIframe === f) $("playerHint").hidden = true; };
+    f.src = src;
+    $("playerBox").appendChild(f);
+    playerIframe = f;
+    $("playerLayer").hidden = false;
+    loadTimer = setTimeout(function () {
+      if (playerIframe === f && !$("playerHint").hidden) {
+        $("playerHint").textContent = "播放器加载较慢，可点「在 B站打开」，或检查车机网络";
+      }
+    }, 10000);
+    return true;
+  }
+  function enterFull() {
+    isFull = true;
+    $("playerLayer").className = "player-layer is-full";
+    $("fullBtn").textContent = "⛶ 退出全屏";
+    try {
+      var n = $("playerLayer");
+      if (n.requestFullscreen) n.requestFullscreen();
+      else if (n.webkitRequestFullscreen) n.webkitRequestFullscreen();
+      else if (n.webkitRequestFullScreen) n.webkitRequestFullScreen();
+    } catch (e) {}
+    if (nativeReady() && window.YingjiCar.fullscreen) window.YingjiCar.fullscreen(true);
+  }
+  function exitFull() {
+    isFull = false;
+    $("playerLayer").className = "player-layer";
+    $("fullBtn").textContent = "⛶ 全屏播放";
+    try {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      else if (document.webkitCancelFullScreen) document.webkitCancelFullScreen();
+    } catch (e) {}
+    if (nativeReady() && window.YingjiCar.fullscreen) window.YingjiCar.fullscreen(false);
+  }
+  function toggleFull() { if (isFull) exitFull(); else enterFull(); }
+  function closePlayer() {
+    if (isFull) exitFull();
+    dropIframe();
+    $("playerLayer").hidden = true;
+    playerItem = null;
+  }
+
   /* ---------- 大按钮操作面板 ---------- */
-  function addAct(box, label, url, main, kind) {
+  function addAct(box, label, url, main, kind, payload) {
     if (!safeUrl(url)) return;
     var b = el("button", "sheet-act" + (main ? " is-main" : ""), label);
     b.type = "button";
     b.onclick = function () {
       if (kind === "copy") copyUrl(url);
-      else openUrl(url);
+      else if (kind === "play" || kind === "playfull") {
+        if (openPlayer(payload) && kind === "playfull") enterFull();
+      } else openUrl(url);
       closeSheet();
     };
     box.appendChild(b);
@@ -330,7 +417,7 @@
     $("sheetTitle").textContent = item.name || "未命名";
     $("sheetMeta").textContent = subText(item, cat) || "";
     $("sheetNote").textContent = cat === "bilibili"
-      ? "视频将跳转到 B站 App 或浏览器，请在驻车后观看；车机行驶中通常会限制视频播放。"
+      ? "沿用网页版的 B站内嵌播放器，点「内嵌播放」即可在 App 内观看，可一键全屏；视频请驻车后观看。"
       : cat === "music"
         ? "歌曲将在 QQ音乐 / 网易云或浏览器中打开。"
         : "可打开豆瓣词条，或直接去各视频平台搜索观看。";
@@ -339,7 +426,10 @@
     clear(box);
     var mainUrl = safeUrl(item.url);
     if (cat === "bilibili") {
-      addAct(box, "打开 B站视频", mainUrl, true, "open");
+      var playUrl = playerEmbed(item) || mainUrl;
+      addAct(box, "▶ 内嵌播放", playUrl, true, "play", item);
+      addAct(box, "⛶ 全屏播放", playUrl, false, "playfull", item);
+      addAct(box, "在 B站打开", mainUrl, false, "open");
       addAct(box, "复制链接", mainUrl, false, "copy");
     } else {
       addAct(box, cat === "music" ? "打开歌曲页" : "打开豆瓣词条", mainUrl, true, "open");
@@ -367,6 +457,11 @@
 
   /* ---------- 返回键（由原生 onBackPressed 调用） ---------- */
   window.__yjBack = function () {
+    if (!$("playerLayer").hidden) {
+      if (isFull) exitFull();      // 全屏 → 先退回窗口
+      else closePlayer();          // 窗口 → 关闭播放器
+      return;
+    }
     if (!$("sheet").hidden) { closeSheet(); return; }
     if (!$("settingSheet").hidden) { closeSetting(); return; }
     if (hasResult) { goHome(); return; }
@@ -383,6 +478,10 @@
   $("homeBtn").onclick = goHome;
   $("settingBtn").onclick = openSetting;
   $("sheetClose").onclick = closeSheet;
+  $("fullBtn").onclick = toggleFull;
+  $("playerCloseBtn").onclick = closePlayer;
+  $("playerOpenBtn").onclick = function () { if (playerItem) openUrl(playerItem.url); };
+  $("playerCopyBtn").onclick = function () { if (playerItem) copyUrl(playerItem.url); };
   $("apiCancel").onclick = closeSetting;
   $("apiSave").onclick = function () {
     var raw = trim($("apiInput").value);

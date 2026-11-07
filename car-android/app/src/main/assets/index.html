@@ -63,7 +63,7 @@
         <h1>一个入口，搜遍影视 / 音乐 / B站</h1>
         <p>1. 点左侧「快捷搜索」直接出结果，或在上方输入关键词</p>
         <p>2. 用左侧分类切换影视、音乐、B站视频，三类结果平级展示</p>
-        <p>3. 点开任意结果，再选一个平台打开，或复制链接</p>
+        <p>3. 点开结果选平台；B站视频可直接内嵌播放，支持一键全屏</p>
         <div class="safety">行车安全提示：视频内容请驻车后观看，车机系统通常会在行驶中限制视频播放。</div>
       </section>
 
@@ -86,6 +86,25 @@
       <div id="grid" class="grid" hidden></div>
     </div>
   </main>
+</div>
+
+<!-- B站内嵌播放器：与网页版一样使用 player.bilibili.com 官方播放器 -->
+<div id="playerLayer" class="player-layer" hidden>
+  <div id="playerBar" class="player-bar">
+    <div class="player-titles">
+      <div id="playerTitle" class="player-title">—</div>
+      <div id="playerMeta" class="player-meta"></div>
+    </div>
+    <div class="player-ctrl">
+      <button id="fullBtn" class="pbtn is-main" type="button">&#9974; 全屏播放</button>
+      <button id="playerOpenBtn" class="pbtn" type="button">在 B站打开</button>
+      <button id="playerCopyBtn" class="pbtn" type="button">复制链接</button>
+      <button id="playerCloseBtn" class="pbtn is-close" type="button">&#10005; 关闭</button>
+    </div>
+  </div>
+  <div id="playerBox" class="player-box">
+    <div id="playerHint" class="player-hint">播放器加载中…</div>
+  </div>
 </div>
 
 <!-- 结果详情 / 平台选择大面板 -->
